@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J OMB_p2p_host
-#SBATCH -o /pscratch/sd/r/ruiliu/osu-micro-benchmarks/results/OMB_%j/OMB_p2p_host-%j.out 
+#SBATCH -o /pscratch/sd/r/ruiliu/osu-micro-benchmarks-ipm/results/OMB_%j/OMB_p2p_host-%j.out 
 #SBATCH -N 2
 #SBATCH -C cpu
 #SBATCH -q sow
@@ -21,31 +21,75 @@
 j=1   #NICs per node
 k=128 #Cores per node
 
+# IPM Setting
+export IPM_HOME=/pscratch/sd/r/ruiliu/IPM/install
+export IPM_LOGDIR=/pscratch/sd/r/ruiliu/ipm-logs
+export IPM_LOG=full
+export IPM_REPORT=full
+
 #The paths to OMB and its point-to-point benchmarks
 #should be specified here
 OMB_DIR=../libexec/osu-micro-benchmarks
 OMB_PT2PT=${OMB_DIR}/mpi/pt2pt
 OMB_1SIDE=${OMB_DIR}/mpi/one-sided
 
-export RESULTS_DIR=/pscratch/sd/r/ruiliu/osu-micro-benchmarks/results/OMB_${SLURM_JOB_ID}
+export RESULTS_DIR=/pscratch/sd/r/ruiliu/osu-micro-benchmarks-ipm/results/OMB_${SLURM_JOB_ID}
 mkdir -p $RESULTS_DIR
 
-export MPICH_GNI_MAX_EAGER_MSG_SIZE=10485760
-export FI_CXI_RDZV_THRESHOLD=10485760
+# Pre-create Level 2 node directories on the shared filesystem
+# so cxi_snapshot.sh can write to them immediately
+echo "Creating two-level directory structure under ${RESULTS_DIR}..."
+for node in $(scontrol show hostnames ${SLURM_NODELIST}); do
+    mkdir -p ${RESULTS_DIR}/${node}
+    echo "  Created: ${RESULTS_DIR}/${node}"
+done
+
+# =============================================================
+# Explicit counter lists — defined here, exported as
+# space-separated strings so cxi_snapshot.sh and cxi_monitor.sh
+# can access them. Reconstruct in child scripts with:
+#   read -ra TX_COUNTERS <<< "${TX_COUNTERS_STR}"
+#   read -ra RX_COUNTERS <<< "${RX_COUNTERS_STR}"
+# =============================================================
+export TX_COUNTERS_STR="\
+hni_tx_ok_64 \
+hni_tx_ok_65_to_127 \
+hni_tx_ok_128_to_255 \
+hni_tx_ok_256_to_511 \
+hni_tx_ok_512_to_1023 \
+hni_tx_ok_1024_to_2047 \
+hni_tx_ok_2048_to_4095 \
+hni_tx_ok_4096_to_8191 \
+hni_pkts_sent_by_tc_0 \
+hni_pkts_sent_by_tc_1"
+
+export RX_COUNTERS_STR="\
+hni_rx_ok_64 \
+hni_rx_ok_65_to_127 \
+hni_rx_ok_128_to_255 \
+hni_rx_ok_256_to_511 \
+hni_rx_ok_512_to_1023 \
+hni_rx_ok_1024_to_2047 \
+hni_rx_ok_2048_to_4095 \
+hni_rx_ok_4096_to_8191 \
+hni_pkts_recv_by_tc_0 \
+hni_pkts_recv_by_tc_1"
+
 
 # Time windows for before/after collection (in seconds)
 BEFORE_DURATION=10
 AFTER_DURATION=10
-#MESSAGE_SIZE=1
-#MESSAGE_SIZE=1048576
-MESSAGE_SIZE=5243000
 
-export SAMPLE_INTERVAL=1
+# Parameters for RDZV threshold
+#export MPICH_GNI_MAX_EAGER_MSG_SIZE=10485760
+#export FI_CXI_RDZV_THRESHOLD=10485760
 
-ITER=500000
-WARMUP_ITER=1000
+# Parameters for OMB 
+MESSAGE_SIZE=2048
+ITER=100000
+WARMUP_ITER=0
 WINDOW_SIZE=1
-
+export SAMPLE_INTERVAL=1
 
 # Collect baseline counters BEFORE benchmarks
 echo "Collecting baseline telemetry for ${BEFORE_DURATION} seconds..."
