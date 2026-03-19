@@ -39,8 +39,7 @@ def load_node_counters(counter_file: Path) -> np.ndarray:
 
     Returns
     -------
-    y_n : np.ndarray, shape (TWO_M,) = (30,)
-        Ordered counter vector following COUNTER_ORDER.
+    y_n : np.ndarray, Ordered counter vector following COUNTER_ORDER.
     """
     df = pd.read_csv(counter_file)
 
@@ -136,52 +135,6 @@ def load_counters(results_dir: str | Path) -> Tuple[np.ndarray, List[str]]:
           f"(N={N} nodes, TWO_M={TWO_M} counters)")
 
     return Y, node_names
-
-
-# =============================================================
-# Multi-run loader
-# =============================================================
-def load_multiple_runs(
-        run_dirs: List[str | Path]
-) -> Tuple[np.ndarray, List[str]]:
-    """
-    Load counter data from multiple runs of the same workload.
-
-    Parameters
-    ----------
-    run_dirs : list of str or Path
-        SLURM job result directories, one per run.
-
-    Returns
-    -------
-    Y_multi : np.ndarray, shape (N, K, TWO_M)
-    node_names : list of str
-    """
-    K = len(run_dirs)
-    all_Y: List[np.ndarray] = []
-    ref_names: List[str] = []
-
-    for k, run_dir in enumerate(run_dirs):
-        Y_k, names_k = load_counters(Path(run_dir))
-
-        if k == 0:
-            ref_names = names_k
-        elif names_k != ref_names:
-            raise ValueError(
-                f"Node mismatch between runs:\n"
-                f"  Run 0  : {ref_names}\n"
-                f"  Run {k} : {names_k}"
-            )
-        all_Y.append(Y_k)
-
-    Y_multi = np.stack(all_Y, axis=1)   # (N, K, TWO_M)
-
-    print(f"\nY_multi shape: {Y_multi.shape}  "
-          f"(N={Y_multi.shape[0]} nodes, "
-          f"K={Y_multi.shape[1]} runs, "
-          f"TWO_M={Y_multi.shape[2]} counters)")
-
-    return Y_multi, ref_names
 
 
 # =============================================================

@@ -117,16 +117,16 @@ def main():
     print("\n" + "=" * 60)
     print("Step 4: Results")
     print("=" * 60)
-    print(X)
-    #print_lambda_summary(node_names, lambdas_used, X)
-    #print()
-    #print_solution_summary(A, X, Y_for_report, node_names, lambdas_used)
+    
+    print_lambda_summary(node_names, lambdas_used, X)
+    print()
+    print_solution_summary(A, X, Y_for_report, node_names)
 
     # ----------------------------------------------------------
     # Final output shapes — ready for downstream use
     # ----------------------------------------------------------
-    x_send = X[:, :N_MSG]   # (N, 19)
-    x_recv = X[:, N_MSG:]   # (N, 19)
+    x_send = X[:, :N_MSG]
+    x_recv = X[:, N_MSG:] 
 
     print("\n" + "=" * 60)
     print("Output shapes ready for downstream use:")
