@@ -83,13 +83,12 @@ COUNTER_ORDER: List[str] = TX_COUNTER_NAMES + RX_COUNTER_NAMES
 N_HIST: int = len(TX_HIST_COUNTER_NAMES)
 N_TC: int = len(TX_TC_COUNTER_NAMES)
 M: int = N_HIST + N_TC
-TWO_M: int = 2 * M
 
-# Named index slices into a counter vector of length TWO_M
+# Named index slices into a counter vector of length 2 * M
 TX_HIST_SLICE: slice = slice(0, N_HIST)
 TX_TC_SLICE:   slice = slice(N_HIST, M)
 RX_HIST_SLICE: slice = slice(M, M + N_HIST)
-RX_TC_SLICE:   slice = slice(M + N_HIST, TWO_M)
+RX_TC_SLICE:   slice = slice(M + N_HIST, 2 * M)
 
 # =============================================================
 # 3. Network parameters
@@ -106,9 +105,9 @@ PAYLOAD_MAX: int = MTU - HEADER_SIZE
 # consistent if the counter list changes.
 #
 # Parsing rules:
-#   "hni_tx_ok_64"          → exact:  lower=upper=64
-#   "hni_tx_ok_65_to_127"   → range:  lower=65,   upper=127
-#   "hni_tx_ok_2048_to_4095"→ range:  lower=2048, upper=4095
+#   "hni_tx_ok_64"          --> exact:  lower=upper=64
+#   "hni_tx_ok_65_to_127"   --> range:  lower=65,   upper=127
+#   "hni_tx_ok_2048_to_4095"--> range:  lower=2048, upper=4095
 # =============================================================
 
 def _parse_bucket_bounds(hist_names: List[str], prefix: str) -> Tuple[List[int], List[int]]:
@@ -131,7 +130,7 @@ def _parse_bucket_bounds(hist_names: List[str], prefix: str) -> Tuple[List[int],
     uppers: List[int] = []
 
     for name in hist_names:
-        suffix = name[len(prefix):]        # e.g. "64" or "65_to_127"
+        suffix = name[len(prefix):]
         if "_to_" in suffix:
             lo, hi = suffix.split("_to_")
             lowers.append(int(lo))
@@ -171,32 +170,52 @@ assert TC_ACK  < N_TC, f"TC_ACK={TC_ACK}   >= N_TC={N_TC}"
 # =============================================================
 # 6. Message size bins
 #
-# Predefined MPI message sizes in bytes.
-# Chosen to span all histogram buckets from short to long.
+# Bucket assignments per empirically confirmed Cassini NIC mapping:
+#   single-packet ranges:
+#     bucket 0 [64B]        :   1 –  11 B
+#     bucket 1 [65–127B]    :  12 –  74 B
+#     bucket 2 [128–255B]   :  75 – 192 B
+#   two-packet ranges (64B control + data, TC/ACK count UNVERIFIED):
+#     bucket 0 + bucket 2   : 193 – 202 B
+#     bucket 0 + bucket 3   : 203 – 458 B
+#     bucket 0 + bucket 4   : 459 – 970 B
+#     bucket 0 + bucket 5   : 971 – 1994 B
+#     bucket 0 + bucket 6   : 1995 – 2048 B
+#   super-MTU (fragmentation formula UNVERIFIED):
+#     > 2048 B
 # =============================================================
 MSG_SIZES: np.ndarray = np.array([
-    11,               # single pkt → bucket 1  (65-127B)
-    74,               # single pkt → bucket 2  (128-255B)
-    192,              # single pkt → bucket 3  (256-511B)
-    202,              # single pkt → bucket 3  (256-511B)
-    458,              # single pkt → bucket 4  (512-1023B)
-    970,              # single pkt → bucket 5  (1024-2047B)
-    1994,             # fragmented → bucket 6 + bucket 1
-    2  * 1024,        #  2 KB
-    4  * 1024,        #  4 KB
-    8  * 1024,        #  8 KB
-    16 * 1024,        # 16 KB
-    32 * 1024,        # 32 KB
-    64 * 1024,        # 64 KB
-    128 * 1024,       # 128 KB
-    256 * 1024,       # 256 KB
-    512 * 1024,       # 512 KB
-    1024 * 1024,      #   1 MB
-    2048 * 1024,      #   2 MB
-    4096 * 1024,      #   4 MB
+    11, 74, 192, 202, 458, 970, 1994,
+    2  * 1024,  4  * 1024,  8  * 1024,  16 * 1024,
+    32 * 1024,  64 * 1024,  128 * 1024, 256 * 1024,
+    512 * 1024, 1024 * 1024, 2048 * 1024, 4096 * 1024,
 ], dtype=np.float64)
 
-N_MSG: int = len(MSG_SIZES)
+MSG_SIZES_FINE: np.ndarray = np.array([
+    4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 32, 40, 48, 56,
+    64, 80, 96, 112, 128, 160,
+    192, 224, 256, 320, 384, 448,
+    512, 640, 768, 896,
+    1024, 1280, 1536, 1792,
+    2048,
+    4  * 1024,  8  * 1024,  16 * 1024,  32 * 1024,
+    64 * 1024,  128 * 1024, 256 * 1024, 512 * 1024,
+    1024 * 1024, 2048 * 1024, 4096 * 1024,
+], dtype=np.float64)
+
+MSG_SIZES_COARSE: np.ndarray = np.array([
+    64, 128, 256, 512, 1024, 2048,
+    4  * 1024,  8  * 1024,  16 * 1024,  32 * 1024,
+    64 * 1024,  128 * 1024, 256 * 1024, 512 * 1024,
+    1024 * 1024, 2048 * 1024, 4096 * 1024,
+], dtype=np.float64)
+
+# Lookup dict — used by main.py --msg_set argument
+MSG_SIZE_SETS: dict = {
+    "default" : MSG_SIZES,
+    "fine"    : MSG_SIZES_FINE,
+    "coarse"  : MSG_SIZES_COARSE,
+}
 
 
 # =============================================================
@@ -210,7 +229,7 @@ def print_constants() -> None:
     print(f"  N_HIST  = {N_HIST}  (histogram buckets per direction)")
     print(f"  N_TC    = {N_TC}  (traffic class counters per direction)")
     print(f"  M       = {M}  (total counters per direction)")
-    print(f"  TWO_M   = {TWO_M}  (total counters TX + RX)")
+    print(f"  TWO_M   = {2 * M}  (total counters TX + RX)")
     print()
     print("Index slices:")
     print(f"  TX_HIST_SLICE = {TX_HIST_SLICE}")
@@ -236,5 +255,3 @@ def print_constants() -> None:
     for j, m in enumerate(MSG_SIZES):
         size_str = f"{int(m / 1024)}KB" if m >= 1024 else f"{int(m)}B"
         print(f"  bin {j:>2}: {size_str:>8}")
-    print()
-    print(f"  N_MSG = {N_MSG}")

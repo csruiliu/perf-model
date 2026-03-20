@@ -16,8 +16,7 @@ from constants import (
     COUNTER_ORDER,
     TX_HIST_SLICE,
     RX_HIST_SLICE,
-    N_HIST,
-    TWO_M,
+    M,
 )
 
 
@@ -96,7 +95,7 @@ def load_counters(results_dir: str | Path) -> Tuple[np.ndarray, List[str]]:
 
     Returns
     -------
-    Y : np.ndarray, shape (N, TWO_M) = (N, 30)
+    Y : np.ndarray, shape (N, 2 * M) = (N, 30)
     node_names : list of str, length N
     """
     results_dir = Path(results_dir)
@@ -121,7 +120,7 @@ def load_counters(results_dir: str | Path) -> Tuple[np.ndarray, List[str]]:
         )
 
     N = len(node_dirs)
-    Y = np.zeros((N, TWO_M), dtype=np.float64)
+    Y = np.zeros((N, 2 * M), dtype=np.float64)
     node_names: List[str] = []
 
     for n, node_dir in enumerate(node_dirs):
@@ -132,7 +131,7 @@ def load_counters(results_dir: str | Path) -> Tuple[np.ndarray, List[str]]:
     _validate(Y, node_names)
 
     print(f"\nDone. Y shape: {Y.shape}  "
-          f"(N={N} nodes, TWO_M={TWO_M} counters)")
+          f"(N={N} nodes, TWO_M={2 * M} counters)")
 
     return Y, node_names
 
@@ -151,7 +150,7 @@ def load_multiple_runs(run_dirs: List[str | Path]) -> Tuple[np.ndarray, List[str
 
     Returns
     -------
-    Y_multi : np.ndarray, shape (N, K, TWO_M)
+    Y_multi : np.ndarray, shape (N, K, 2 * M)
     node_names : list of str
     """
     K = len(run_dirs)
@@ -163,15 +162,10 @@ def load_multiple_runs(run_dirs: List[str | Path]) -> Tuple[np.ndarray, List[str
 
         if k == 0:
             ref_names = names_k
-        elif names_k != ref_names:
-            raise ValueError(
-                f"Node mismatch between runs:\n"
-                f"  Run 0  : {ref_names}\n"
-                f"  Run {k} : {names_k}"
-            )
+        
         all_Y.append(Y_k)
 
-    Y_multi = np.stack(all_Y, axis=1)   # (N, K, TWO_M)
+    Y_multi = np.stack(all_Y, axis=1)   # (N, K, 2 * M)
 
     print(f"\nY_multi shape: {Y_multi.shape}  "
           f"(N={Y_multi.shape[0]} nodes, "

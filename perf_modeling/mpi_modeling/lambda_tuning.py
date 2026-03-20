@@ -17,8 +17,6 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from typing import Tuple, Dict
 
-from constants import TWO_M
-
 
 # =============================================================
 # Core LASSO solver
@@ -31,13 +29,6 @@ def solve_lasso(A: np.ndarray,
     Solve one non-negative LASSO instance:
 
         min_{x >= 0}  ||x||_1 + lambda * ||Ax - y||_2^2
-
-    Parameters
-    ----------
-    A          : np.ndarray, shape (n_obs, n_unknowns)
-    y          : np.ndarray, shape (n_obs,)
-    lambda_val : float
-    solver     : str
 
     Returns
     -------
@@ -74,11 +65,6 @@ def compute_lambda_zero(A: np.ndarray, y: np.ndarray) -> float:
 
         lambda_zero = 1 / (2 * max_j (A^T y)_j)
 
-    Parameters
-    ----------
-    A : np.ndarray, shape (TWO_M, 2*N_msg)
-    y : np.ndarray, shape (TWO_M,)
-
     Returns
     -------
     lambda_zero : float
@@ -107,18 +93,6 @@ def l_curve_method(A: np.ndarray,
                    node_name: str = "") -> Tuple[float, Dict]:
     """
     Automatic lambda selection using the L-curve method.
-
-    Parameters
-    ----------
-    A                 : np.ndarray, shape (TWO_M, 2*N_msg)
-    y                 : np.ndarray, shape (TWO_M,)
-    n_points          : int
-    lambda_min_factor : float   lambda_min = lambda_zero * factor
-    lambda_max_factor : float   lambda_max = lambda_zero * factor
-    solver            : str
-    plot              : bool
-    plot_dir          : str
-    node_name         : str
 
     Returns
     -------
@@ -206,16 +180,6 @@ def loco_cv_method(A: np.ndarray,
     """
     Automatic lambda selection via Leave-One-Counter-Out CV.
 
-    Parameters
-    ----------
-    A                 : np.ndarray, shape (TWO_M, 2*N_msg)
-    y                 : np.ndarray, shape (TWO_M,)
-    n_points          : int
-    lambda_min_factor : float
-    lambda_max_factor : float
-    solver            : str
-    node_name         : str
-
     Returns
     -------
     lambda_opt : float
@@ -276,17 +240,6 @@ def auto_tune_lambda(A: np.ndarray,
                      node_name: str = "") -> Tuple[float, Dict]:
     """
     Automatically select lambda for one node.
-
-    Parameters
-    ----------
-    A         : np.ndarray, shape (TWO_M, 2*N_msg)
-    y         : np.ndarray, shape (TWO_M,)
-    method    : str   'lcurve' (default, fast) or 'loco_cv' (thorough)
-    n_points  : int
-    solver    : str
-    plot      : bool
-    plot_dir  : str
-    node_name : str
 
     Returns
     -------

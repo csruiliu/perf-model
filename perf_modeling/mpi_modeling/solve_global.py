@@ -9,7 +9,7 @@ All constants imported from constants.py.
 import numpy as np
 from typing import Tuple, List, Optional
 
-from constants import TWO_M, N_MSG, MSG_SIZES
+from constants import MSG_SIZES
 from lambda_tuning import solve_lasso, auto_tune_lambda
 
 
@@ -29,18 +29,6 @@ def solve_per_node(A: np.ndarray,
     Solve per-node LASSO with optional automatic lambda tuning.
 
         min_{x >= 0}  ||x||_1 + lambda * ||Ax - y||_2^2
-
-    Parameters
-    ----------
-    A          : np.ndarray, shape (TWO_M, 2*N_msg)
-    y_n        : np.ndarray, shape (TWO_M,)
-    lambda_val : float or 'auto'
-    method     : str   'lcurve' or 'loco_cv'
-    n_points   : int
-    solver     : str
-    plot       : bool
-    plot_dir   : str
-    node_name  : str
 
     Returns
     -------
@@ -138,18 +126,6 @@ def solve_global(A: np.ndarray,
     """
     Solve global optimization for all nodes (single run).
 
-    Parameters
-    ----------
-    A          : np.ndarray, shape (TWO_M, 2*N_msg)   from build_A()
-    Y          : np.ndarray, shape (N, TWO_M)          from load_counters()
-    lambda_val : float or 'auto'
-    method     : str
-    n_points   : int
-    node_names : list of str
-    solver     : str
-    plot       : bool
-    plot_dir   : str
-
     Returns
     -------
     X            : np.ndarray, shape (N, 2*N_msg)
@@ -212,11 +188,6 @@ def solve_global_stacked(A: np.ndarray,
     """
     Solve global optimization using stacked multi-run observations.
 
-    Parameters
-    ----------
-    A       : np.ndarray, shape (TWO_M, 2*N_msg)
-    Y_multi : np.ndarray, shape (N, K, TWO_M)   from load_multiple_runs()
-
     Returns
     -------
     X            : np.ndarray, shape (N, 2*N_msg)
@@ -260,20 +231,24 @@ def solve_global_stacked(A: np.ndarray,
 # =============================================================
 # Post-processing
 # =============================================================
-def extract_send_recv(X: np.ndarray, n_msg: int = N_MSG) -> Tuple[np.ndarray, np.ndarray]:
+def extract_send_recv(X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """
     Split X into send and recv distributions.
 
     Parameters
     ----------
-    X     : np.ndarray, shape (N, 2*N_msg)
-    n_msg : int   number of message size bins
+    X : np.ndarray, shape (N, 2*n_msg)
 
     Returns
     -------
-    x_send : np.ndarray, shape (N, N_msg)
-    x_recv : np.ndarray, shape (N, N_msg)
+    x_send : np.ndarray, shape (N, n_msg)
+    x_recv : np.ndarray, shape (N, n_msg)
     """
+    if X.shape[1] % 2 != 0:
+        raise ValueError(
+            f"X has {X.shape[1]} columns — expected an even number (2*n_msg)."
+        )
+    n_msg = X.shape[1] // 2
     return X[:, :n_msg], X[:, n_msg:]
 
 
@@ -318,9 +293,14 @@ def print_solution_summary(A: np.ndarray,
 
 def print_lambda_summary(node_names: List[str],
                          lambdas_used: List[float],
-                         X: np.ndarray,
-                         n_msg: int = N_MSG) -> None:
+                         X: np.ndarray) -> None:
     """Print per-node lambda selection summary."""
+    if X.shape[1] % 2 != 0:
+        raise ValueError(
+            f"X has {X.shape[1]} columns — expected an even number (2*n_msg)."
+        )
+    n_msg = X.shape[1] // 2
+
     print("\n=== Lambda Summary ===")
     print(f"  {'Node':<20} {'lambda':>12} {'active_bins':>12} "
           f"{'total_sends':>12} {'total_recvs':>12}")
@@ -328,7 +308,7 @@ def print_lambda_summary(node_names: List[str],
     for n, (name, lam) in enumerate(zip(node_names, lambdas_used)):
         x_send = X[n, :n_msg]
         x_recv = X[n, n_msg:]
-        active = int(np.sum(X[n, :] > 0.5))
+        active   = int(np.sum(X[n, :] > 0.5))
         tot_send = int(np.sum(x_send))
         tot_recv = int(np.sum(x_recv))
         print(f"  {name:<20} {lam:>12.3e} {active:>12} "
