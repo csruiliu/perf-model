@@ -24,47 +24,12 @@ from constants import (
     BUCKET_LOWER, BUCKET_UPPER,
     TC_DATA, TC_ACK,
     MSG_SIZES,
+    RDZV_THRESHOLD
 )
 
 # =============================================================
-# Protocol threshold
-#
-# Messages >  RENDEZVOUS_THRESHOLD bytes --> rendezvous protocol
-# Messages <= RENDEZVOUS_THRESHOLD bytes --> eager protocol
-#
-# Observed sender-side TC flip in rendezvous:
-#   eager      : tc_DATA is the request class (TX), tc_ACK is the response class (RX)
-#   rendezvous : tc0 = response (RX),  tc1 = request (TX) <-- swapped
-#
-# The receiver NIC shows no corresponding flip.
-#
-# Move to constants.py if this value is shared by other modules.
-# =============================================================
-RDZV_THRESHOLD: int = 16384   # bytes
-
-
-# =============================================================
 # Empirically confirmed sub-MTU fragmentation map
-#
-# Each entry: (msg_size_upper_bound_inclusive, [bucket_indices])
-# The list is ordered — first matching upper bound wins.
-#
-# Confirmed on Cassini NIC (Perlmutter) for msg_size 1..MTU:
-#
-#    1 –   11 B : single 64 B packet         --> bucket 0 [64,   64]
-#   12 –   74 B : single packet              --> bucket 1 [65,  127]
-#   75 –  192 B : single packet              --> bucket 2 [128, 255]
-#  193 –  202 B : 64 B control + data packet --> bucket 0 + bucket 2
-#  203 –  458 B : 64 B control + data packet --> bucket 0 + bucket 3
-#  459 –  970 B : 64 B control + data packet --> bucket 0 + bucket 4
-#  971 – 1994 B : 64 B control + data packet --> bucket 0 + bucket 5
-# 1995 – 2048 B : 64 B control + data packet --> bucket 0 + bucket 6
-#
-# NOTE: super-MTU behavior (msg_size > 2048 B) is NOT yet confirmed
-# against hardware. The existing fragmentation formula is kept as a
-# placeholder and clearly flagged below.
 # =============================================================
-
 _SUB_MTU_RANGES: List[Tuple[int, List[int]]] = [
     (11,   [0]),
     (74,   [1]),
@@ -77,9 +42,6 @@ _SUB_MTU_RANGES: List[Tuple[int, List[int]]] = [
 ]
 
 
-# =============================================================
-# Helpers
-# =============================================================
 def _packet_to_bucket(pkt_size: int) -> int:
     """Map packet size (bytes, including header) to bucket index."""
     for b in range(N_HIST):
@@ -94,28 +56,15 @@ def _packet_to_bucket(pkt_size: int) -> int:
 def _message_to_histogram(msg_size: int) -> np.ndarray:
     """
     Compute packet histogram for one MPI message.
-
-    For msg_size in [1, MTU]  : uses empirically confirmed Cassini NIC mapping
-                                 from _SUB_MTU_RANGES.
-    For msg_size > MTU        : uses fragmentation formula.
-
-    Parameters
-    ----------
-    msg_size : int   MPI message payload in bytes
-
-    Returns
-    -------
-    hist : np.ndarray, shape (N_HIST,)
     """
     hist = np.zeros(N_HIST, dtype=np.uint32)
     msg_size = int(msg_size)
 
     if msg_size == 0:
-        hist[0] += 1  # treat as header-only packet --> bucket 0
+        hist[0] += 1
         return hist
 
     if msg_size <= MTU:
-        # Empirically confirmed lookup
         for upper, buckets in _SUB_MTU_RANGES:
             if msg_size <= upper:
                 for b in buckets:
@@ -123,49 +72,59 @@ def _message_to_histogram(msg_size: int) -> np.ndarray:
                 return hist
 
     else:
-        # --------------------------------------------------------
-        # super-MTU fragmentation formula.
-        # Fragment into full MTU-sized packets plus a remainder.
-        # Update this block once hardware behavior is confirmed
-        # for msg_size > 2048 B.
-        # --------------------------------------------------------
-        n_full    = msg_size // MTU
+        n_full = msg_size // MTU
         remainder = msg_size %  MTU
-        hist[_packet_to_bucket(MTU)] += n_full
+
+        hist[_packet_to_bucket(MTU + HEADER_SIZE)] += n_full
+        
         if remainder > 0:
-            hist[_packet_to_bucket(remainder + HEADER_SIZE)] += 1
+            for upper, buckets in _SUB_MTU_RANGES:
+                if remainder <= upper:
+                    for b in buckets:
+                        hist[b] += 1
+                    break
+        
+        if msg_size > RDZV_THRESHOLD:
+            hist[0] += 1
 
     return hist
 
 
-def _ack_histogram(n_data_pkts: int) -> np.ndarray:
-    """
-    ACK histogram — all ACKs are HEADER_SIZE bytes --> bucket 0.
-
-    Returns
-    -------
-    hist : np.ndarray, shape (N_HIST,)
-    """
-    hist = np.zeros(N_HIST, dtype=np.float64)
-    hist[0] += n_data_pkts
+def _ack_histogram(msg_size: int) -> np.ndarray:
+    """Generate the hardware histogram for ACK/CTS packets sent by the receiver."""
+    hist = np.zeros(N_HIST, dtype=np.uint32)
+    
+    if msg_size <= MTU:
+        hist[0] += 1
+    else:
+        n_full = msg_size // MTU
+        remainder = msg_size % MTU
+        
+        hist[0] += n_full
+        if remainder > 0:
+            hist[0] += 1
+            
+        if msg_size > RDZV_THRESHOLD:
+            hist[0] += 1
+            
     return hist
 
 
-# =============================================================
-# Helpers
-# =============================================================
-def _tc_vector(n_packets: int, tc_index: int) -> np.ndarray:
+def _tc_vector(msg_size: int, n_packets: int, tc_index: int) -> np.ndarray:
     """
     Build a traffic class counter vector.
-
-    Returns
-    -------
-    tc : np.ndarray, shape (N_TC,)
     """
     if tc_index >= N_TC:
         raise ValueError(f"tc_index={tc_index} >= N_TC={N_TC}")
     tc = np.zeros(N_TC, dtype=np.float64)
-    tc[tc_index] = n_packets
+
+    if msg_size <= RDZV_THRESHOLD:
+        tc[tc_index] = n_packets
+    else:
+        other_tc = 1 - tc_index if N_TC == 2 else 0
+        tc[other_tc] = 1
+        tc[tc_index] = max(0, n_packets - 1)
+
     return tc
 
 
@@ -181,15 +140,6 @@ def _transmit_tc(tc_eager: int, msg_size: int) -> int:
     sender-NIC hardware flips tc0 and tc1:
         tc0 --> response  (ACK / CTS arriving at the sender)
         tc1 --> request   (data departing from the sender)
-
-    Parameters
-    ----------
-    tc_eager : int   TC index that applies under the eager protocol.
-    msg_size : int   MPI message payload in bytes.
-
-    Returns
-    -------
-    int : effective TC index to pass to _tc_vector for the sender column.
     """
     if msg_size <= RDZV_THRESHOLD:
         return tc_eager
@@ -220,15 +170,6 @@ def _receive_tc(tc_eager: int, msg_size: int) -> int:
     not yet been independently confirmed against hardware. Update the body
     of this function once empirical data is available without touching
     _sender_tc or build_matrixA.
-
-    Parameters
-    ----------
-    tc_eager : int   TC index that applies under the eager protocol.
-    msg_size : int   MPI message payload in bytes.
-
-    Returns
-    -------
-    int : effective TC index to pass to _tc_vector for the receiver column.
     """
     if msg_size <= RDZV_THRESHOLD:
         return tc_eager
@@ -245,18 +186,7 @@ def _receive_tc(tc_eager: int, msg_size: int) -> int:
 # Sub-MTU mapping validation
 # =============================================================
 def _validate_sub_mtu_mapping() -> None:
-    """
-    Confirm _message_to_histogram matches the empirically confirmed
-    Cassini NIC mapping at every range boundary.
-
-    Tests both endpoints of every range and the transition point into
-    the next range to catch off-by-one errors.
-
-    Raises
-    ------
-    AssertionError if any boundary case produces incorrect buckets.
-    """
-    # (msg_size_bytes, expected_active_bucket_indices)
+    """Confirm _message_to_histogram matches the empirically confirmed Cassini NIC mapping."""
     boundary_cases: List[Tuple[int, List[int]]] = [
         (1,    [0]),
         (11,   [0]),
@@ -295,15 +225,11 @@ def _validate_sub_mtu_mapping() -> None:
     print(f"  [OK] Sub-MTU mapping: all {len(boundary_cases)} boundary cases pass")
 
 
-
 # =============================================================
 # Duplicate column checker
 # =============================================================
 def check_duplicate_columns(A: np.ndarray, msg_sizes: np.ndarray) -> None:
-    """
-    Detect message size bins whose NIC counter fingerprints are
-    identical — i.e. the hardware cannot distinguish them.
-    """
+    """Detect message size bins whose NIC counter fingerprints are identical."""
     N = len(msg_sizes)
     seen: dict = {}
     duplicates: list = []
@@ -338,8 +264,6 @@ def build_matrixA(msg_sizes: np.ndarray = MSG_SIZES) -> np.ndarray:
     """
     Build the system signature matrix A.
 
-    Validates the empirical sub-MTU mapping before building.
-
     Row layout (TWO_M rows):
         TX_HIST_SLICE --> TX histogram
         TX_TC_SLICE   --> TX traffic class
@@ -359,45 +283,35 @@ def build_matrixA(msg_sizes: np.ndarray = MSG_SIZES) -> np.ndarray:
     rendezvous (msg_size > RENDEZVOUS_THRESHOLD):
         sender TX --> TC_ACK,   sender RX --> TC_DATA   (flip via _sender_tc)
         recv   TX --> TC_ACK,   recv   RX --> TC_DATA   (unchanged)
-
-    Parameters
-    ----------
-    msg_sizes : np.ndarray, shape (N_msg,)
-
-    Returns
-    -------
-    A : np.ndarray, shape (TWO_M, 2*N_msg)
     """
     print("  Validating sub-MTU empirical mapping...")
     _validate_sub_mtu_mapping()
 
     N = len(msg_sizes)
-    A = np.zeros((2 * M, 2 * N), dtype=np.uint32)
+    A = np.zeros((2 * M, 2 * N), dtype=np.float64)
 
     for j, msg_size in enumerate(msg_sizes):
-        msg_sz      = int(msg_size)
-        data_hist   = _message_to_histogram(msg_sz)
+        msg_sz = int(msg_size)
+        data_hist = _message_to_histogram(msg_sz)
         n_data_pkts = int(np.sum(data_hist))
-        ack_hist    = _ack_histogram(n_data_pkts)
-        n_ack_pkts  = n_data_pkts
+        ack_hist = _ack_histogram(n_data_pkts)
+        n_ack_pkts = int(np.sum(ack_hist))
 
         # ----------------------------------------------------------
         # Send column j — sender-NIC view
-        # _transmit_tc resolves the TC flip for rendezvous messages.
         # ----------------------------------------------------------
         A[TX_HIST_SLICE, j] = data_hist
-        A[TX_TC_SLICE,   j] = _tc_vector(n_data_pkts, _transmit_tc(TC_DATA, msg_sz))
+        A[TX_TC_SLICE, j] = _tc_vector(msg_size, n_data_pkts, _transmit_tc(TC_DATA, msg_sz))
         A[RX_HIST_SLICE, j] = ack_hist
-        A[RX_TC_SLICE,   j] = _tc_vector(n_ack_pkts,  _transmit_tc(TC_ACK,  msg_sz))
+        A[RX_TC_SLICE, j] = _tc_vector(msg_size, n_ack_pkts,  _transmit_tc(TC_ACK,  msg_sz))
 
         # ----------------------------------------------------------
         # Recv column N+j — receiver-NIC view
-        # _receive_tc resolves the TC flip for rendezvous messages.
         # ----------------------------------------------------------
         A[TX_HIST_SLICE, N+j] = ack_hist
-        A[TX_TC_SLICE,   N+j] = _tc_vector(n_ack_pkts,  _receive_tc(TC_ACK,  msg_sz))
+        A[TX_TC_SLICE, N+j] = _tc_vector(msg_size, n_ack_pkts,  _receive_tc(TC_ACK,  msg_sz))
         A[RX_HIST_SLICE, N+j] = data_hist
-        A[RX_TC_SLICE,   N+j] = _tc_vector(n_data_pkts, _receive_tc(TC_DATA, msg_sz))
+        A[RX_TC_SLICE, N+j] = _tc_vector(msg_size, n_data_pkts, _receive_tc(TC_DATA, msg_sz))
 
     return A
 

@@ -99,6 +99,18 @@ HEADER_SIZE: int = 64     # Cassini packet header size (bytes)
 PAYLOAD_MAX: int = MTU - HEADER_SIZE
 
 # =============================================================
+# Protocol threshold
+#
+# Messages >  RENDEZVOUS_THRESHOLD bytes --> rendezvous protocol
+# Messages <= RENDEZVOUS_THRESHOLD bytes --> eager protocol
+#
+# Observed sender-side TC flip in rendezvous:
+#   eager      : tc_DATA is the request class (TX), tc_ACK is the response class (RX)
+#   rendezvous : tc0 = response (RX),  tc1 = request (TX) <-- swapped
+# =============================================================
+RDZV_THRESHOLD: int = 16384   # bytes
+
+# =============================================================
 # 4. Histogram bucket bounds
 #
 # Parsed automatically from TX_HIST_COUNTER_NAMES so they stay

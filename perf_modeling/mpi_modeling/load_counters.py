@@ -3,8 +3,6 @@ load_counters.py
 
 Loads Cassini hardware counter data from the two-level directory
 structure produced by sbatch scripts we used on Perlmutter.
-
-All constants imported from constants.py.
 """
 
 import numpy as np
@@ -31,11 +29,6 @@ def load_node_counters(counter_file: Path) -> np.ndarray:
     It has three columns:
         counter_name, direction, value
 
-    Parameters
-    ----------
-    counter_file : Path
-        Path to <node_name>/counters.csv
-
     Returns
     -------
     y_n : np.ndarray, Ordered counter vector following COUNTER_ORDER.
@@ -50,9 +43,7 @@ def load_node_counters(counter_file: Path) -> np.ndarray:
             f"  Found    : {set(df.columns)}"
         )
 
-    counter_lookup: Dict[str, float] = dict(
-        zip(df["counter_name"], df["value"])
-    )
+    counter_lookup: Dict[str, float] = dict(zip(df["counter_name"], df["value"]))
 
     missing = [
         name for name in COUNTER_ORDER
@@ -70,9 +61,7 @@ def load_node_counters(counter_file: Path) -> np.ndarray:
     )
 
     if np.any(y_n < 0):
-        raise ValueError(
-            f"{counter_file}: negative counter values detected."
-        )
+        raise ValueError(f"{counter_file}: negative counter values detected.")
 
     return y_n
 
@@ -92,11 +81,6 @@ def load_counters(results_dir: str | Path) -> Tuple[np.ndarray, List[str]]:
     results_dir : str or Path
         Top-level results directory named by SLURM job ID.
         Example: "/pscratch/.../results/OMB_12345678"
-
-    Returns
-    -------
-    Y : np.ndarray, shape (N, 2 * M) = (N, 30)
-    node_names : list of str, length N
     """
     results_dir = Path(results_dir)
 
@@ -130,8 +114,7 @@ def load_counters(results_dir: str | Path) -> Tuple[np.ndarray, List[str]]:
 
     _validate(Y, node_names)
 
-    print(f"\nDone. Y shape: {Y.shape}  "
-          f"(N={N} nodes, TWO_M={2 * M} counters)")
+    print(f"\nDone. Y shape: {Y.shape}  (N={N} nodes, TWO_M={2 * M} counters)")
 
     return Y, node_names
 

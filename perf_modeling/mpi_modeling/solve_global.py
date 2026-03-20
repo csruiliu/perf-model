@@ -75,19 +75,11 @@ def solve_per_node_stacked(A: np.ndarray,
     A      : np.ndarray, shape (TWO_M, 2*N_msg)
     Y_runs : np.ndarray, shape (K, TWO_M)
              Y_runs[k, :] = counter vector from run k
-
-    Returns
-    -------
-    x_n         : np.ndarray, shape (2*N_msg,)
-    lambda_used : float
     """
     K, two_M = Y_runs.shape
 
     if two_M != A.shape[0]:
-        raise ValueError(
-            f"Y_runs has {two_M} counters per run "
-            f"but A has {A.shape[0]} rows."
-        )
+        raise ValueError(f"Y_runs has {two_M} counters per run but A has {A.shape[0]} rows.")
 
     if K == 1:
         print(f"  Single run ({two_M} obs, {A.shape[1]} unknowns)")
@@ -134,10 +126,7 @@ def solve_global(A: np.ndarray,
     N, two_M = Y.shape
 
     if two_M != A.shape[0]:
-        raise ValueError(
-            f"Y has {two_M} counters per node "
-            f"but A has {A.shape[0]} rows."
-        )
+        raise ValueError(f"Y has {two_M} counters per node but A has {A.shape[0]} rows.")
 
     if node_names is None:
         node_names = [f"node_{n}" for n in range(N)]
@@ -185,14 +174,7 @@ def solve_global_stacked(A: np.ndarray,
                          solver: str = "CLARABEL",
                          plot: bool = False,
                          plot_dir: str = ".") -> Tuple[np.ndarray, List[float]]:
-    """
-    Solve global optimization using stacked multi-run observations.
-
-    Returns
-    -------
-    X            : np.ndarray, shape (N, 2*N_msg)
-    lambdas_used : list of float, length N
-    """
+    """Solve global optimization using stacked multi-run observations."""
     N, K, two_M = Y_multi.shape
 
     if node_names is None:
@@ -232,18 +214,7 @@ def solve_global_stacked(A: np.ndarray,
 # Post-processing
 # =============================================================
 def extract_send_recv(X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
-    """
-    Split X into send and recv distributions.
-
-    Parameters
-    ----------
-    X : np.ndarray, shape (N, 2*n_msg)
-
-    Returns
-    -------
-    x_send : np.ndarray, shape (N, n_msg)
-    x_recv : np.ndarray, shape (N, n_msg)
-    """
+    """Split X into send and recv distributions."""
     if X.shape[1] % 2 != 0:
         raise ValueError(
             f"X has {X.shape[1]} columns — expected an even number (2*n_msg)."
@@ -313,4 +284,5 @@ def print_lambda_summary(node_names: List[str],
         tot_recv = int(np.sum(x_recv))
         print(f"  {name:<20} {lam:>12.3e} {active:>12} "
               f"{tot_send:>12} {tot_recv:>12}")
+
         

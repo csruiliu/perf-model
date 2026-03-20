@@ -1,4 +1,6 @@
 """
+mpi_modeling.py
+
 Full pipeline entry point for the MPI communication model.
 
 Usage:
@@ -24,7 +26,6 @@ from build_matrix import build_matrixA, print_matrix_summary
 from solve_global import (
     solve_global,
     solve_global_stacked,
-    extract_send_recv,
     print_solution_summary,
     print_lambda_summary,
 )
@@ -54,7 +55,7 @@ def main():
 
     # Resolve message size set
     msg_sizes = MSG_SIZE_SETS[args.msg_set]
-    n_msg     = len(msg_sizes)
+    n_msg = len(msg_sizes)
     print(f"Message size set : '{args.msg_set}'  ({n_msg} bins)")
 
     # Parse lambda_val — float or 'auto'

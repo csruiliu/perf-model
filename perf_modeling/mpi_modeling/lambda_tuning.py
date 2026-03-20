@@ -29,15 +29,14 @@ def solve_lasso(A: np.ndarray,
     Solve one non-negative LASSO instance:
 
         min_{x >= 0}  ||x||_1 + lambda * ||Ax - y||_2^2
-
-    Returns
-    -------
-    x : np.ndarray, shape (n_unknowns,)
     """
     n = A.shape[1]
     x = cp.Variable(n, nonneg=True)
 
-    prob = cp.Problem(cp.Minimize(cp.norm1(x) + lambda_val * cp.sum_squares(A @ x - y)))
+    # Note: Because x >= 0, the L1 norm ||x||_1 simplifies completely to the sum of x.
+    # Defining it as cp.sum(x) reformulates the setup as a pure Quadratic Program (QP) 
+    # instead of a Second-Order Cone Program (SOCP), which is far faster for solvers.
+    prob = cp.Problem(cp.Minimize(cp.sum(x) + lambda_val * cp.sum_squares(A @ x - y)))
 
     try:
         prob.solve(solver=solver, verbose=False)
@@ -64,10 +63,6 @@ def compute_lambda_zero(A: np.ndarray, y: np.ndarray) -> float:
     Compute the smallest lambda above which x becomes non-zero.
 
         lambda_zero = 1 / (2 * max_j (A^T y)_j)
-
-    Returns
-    -------
-    lambda_zero : float
     """
     ATy_pos = np.maximum(A.T @ y, 0)
     max_val = np.max(ATy_pos)
@@ -209,7 +204,7 @@ def loco_cv_method(A: np.ndarray,
             fold_errors[k] = (A[k, :] @ x_k - y[k]) ** 2
         cv_errors[i] = np.mean(fold_errors)
 
-    best_idx   = int(np.argmin(cv_errors))
+    best_idx = int(np.argmin(cv_errors))
     lambda_opt = float(lambda_grid[best_idx])
 
     print(f"    lambda_opt = {lambda_opt:.3e}  "
@@ -240,26 +235,21 @@ def auto_tune_lambda(A: np.ndarray,
                      node_name: str = "") -> Tuple[float, Dict]:
     """
     Automatically select lambda for one node.
-
-    Returns
-    -------
-    lambda_opt : float
-    info       : dict
     """
     if method == "lcurve":
         return l_curve_method(
             A, y,
             n_points  = n_points,
-            solver    = solver,
-            plot      = plot,
-            plot_dir  = plot_dir,
+            solver = solver,
+            plot = plot,
+            plot_dir = plot_dir,
             node_name = node_name
         )
     elif method == "loco_cv":
         return loco_cv_method(
             A, y,
-            n_points  = n_points,
-            solver    = solver,
+            n_points = n_points,
+            solver = solver,
             node_name = node_name
         )
     else:
