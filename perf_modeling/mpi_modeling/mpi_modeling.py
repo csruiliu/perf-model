@@ -20,9 +20,10 @@ Usage:
 import argparse
 from pathlib import Path
 
-from constants import print_constants, MSG_SIZE_SETS
+from constants import print_constants, MSG_SIZE_SETS, RDZV_THRESHOLD
 from load_counters import load_counters, load_multiple_runs
 from build_matrix import build_matrixA, print_matrix_summary
+from time_estimator import fit_latency_model, compute_upper_bound_time, create_direct_lookup_model
 from solve_global import (
     solve_global,
     solve_global_stacked,
@@ -35,6 +36,10 @@ def main():
     parser = argparse.ArgumentParser(description="MPI Communication Profiler — hardware counter model")
     parser.add_argument("results_dirs", type=Path, nargs="+",
                         help="One or more SLURM job result directories (OMB_<job_id>)")
+    parser.add_argument("--osu_latency_file", type=Path, default=None, 
+                        help="Path to OSU latency benchmark output (e.g., osu_latency.txt)")
+    parser.add_argument("--latency_method", type=str, choices=['fit', 'direct'], default='fit', 
+                        help="Choose 'fit' for the piecewise Hockney model or 'direct' for raw benchmark lookup")
     parser.add_argument("--msg_set", default="default", choices=list(MSG_SIZE_SETS.keys()),
                         help="Message size bin set: default | fine | coarse  (default: default)")
     parser.add_argument("--lambda_val", default="auto",
@@ -128,9 +133,6 @@ def main():
     print()
     print_solution_summary(A, X, Y_for_report, node_names, msg_sizes=msg_sizes)
 
-    # ----------------------------------------------------------
-    # Final output shapes — ready for downstream use
-    # ----------------------------------------------------------
     x_send = X[:, :n_msg]
     x_recv = X[:, n_msg:] 
 
@@ -140,6 +142,38 @@ def main():
     print(f"  X      : {X.shape}  (N nodes, 2*N_MSG bins)")
     print(f"  x_send : {x_send.shape}  (N nodes, N_MSG send bins)")
     print(f"  x_recv : {x_recv.shape}  (N nodes, N_MSG recv bins)")
+
+    # ----------------------------------------------------------
+    # Step 5 — Estimate Communication Time Upper Bound
+    # ----------------------------------------------------------
+    if args.osu_latency_file:
+        print("\n" + "=" * 60)
+        print("Step 5: Estimate Communication Time Upper Bound")
+        print("=" * 60)
+        
+        if not args.osu_latency_file.exists():
+            print(f"  [ERROR] OSU latency file not found: {args.osu_latency_file}")
+        else:
+            # Choose the latency calculation method based on a command-line flag
+            # Assuming you added args.latency_method which defaults to 'fit'
+            if args.latency_method == 'direct':
+                print("Using direct raw latency lookup...")
+                latency_model = create_direct_lookup_model(args.osu_latency_file)
+            else:
+                print("Using piecewise Hockney model fit...")
+                latency_model = fit_latency_model(args.osu_latency_file, rdzv_threshold=RDZV_THRESHOLD)
+                        
+            # Unpack the three return values
+            overlap_time_us, sequential_time_us, heaviest_node_idx = compute_upper_bound_time(
+                x_send, x_recv, msg_sizes, latency_model
+            )
+            
+            heaviest_node_name = node_names[heaviest_node_idx] if node_names else str(heaviest_node_idx)
+            
+            print("\n  === Time Estimation Results ===")
+            print(f"  Heaviest communicating node : {heaviest_node_name}")
+            print(f"  Overlap mode (Max node time): {overlap_time_us / 1e6:.4f} seconds")
+            print(f"  Sequential mode (Total time): {sequential_time_us / 1e6:.4f} seconds")
 
 
 if __name__ == "__main__":
