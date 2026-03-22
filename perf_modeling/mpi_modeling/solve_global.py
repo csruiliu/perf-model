@@ -284,5 +284,3 @@ def print_lambda_summary(node_names: List[str],
         tot_recv = int(np.sum(x_recv))
         print(f"  {name:<20} {lam:>12.3e} {active:>12} "
               f"{tot_send:>12} {tot_recv:>12}")
-
-        

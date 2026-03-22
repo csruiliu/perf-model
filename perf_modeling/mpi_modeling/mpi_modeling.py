@@ -23,7 +23,13 @@ from pathlib import Path
 from constants import print_constants, MSG_SIZE_SETS, RDZV_THRESHOLD
 from load_counters import load_counters, load_multiple_runs
 from build_matrix import build_matrixA, print_matrix_summary
-from time_estimator import fit_latency_model, compute_upper_bound_time, create_direct_lookup_model
+from time_estimator import (
+    fit_latency_model, 
+    compute_upper_bound_time, 
+    create_direct_lookup_model, 
+    create_direct_gap_model,
+    fit_gap_model
+)
 from solve_global import (
     solve_global,
     solve_global_stacked,
@@ -38,8 +44,12 @@ def main():
                         help="One or more SLURM job result directories (OMB_<job_id>)")
     parser.add_argument("--osu_latency_file", type=Path, default=None, 
                         help="Path to OSU latency benchmark output (e.g., osu_latency.txt)")
+    parser.add_argument("--osu_bw_file", type=Path, default=None, 
+                        help="Path to OSU bandwidth benchmark output for Gap model (e.g., osu_bibw.txt)")
     parser.add_argument("--latency_method", type=str, choices=['fit', 'direct'], default='fit', 
                         help="Choose 'fit' for the piecewise Hockney model or 'direct' for raw benchmark lookup")
+    parser.add_argument("--bandwidth_method", type=str, choices=['fit', 'direct'], default='fit', 
+                        help="Choose 'fit' to model the injection gap linearly or 'direct' for raw benchmark lookup")
     parser.add_argument("--msg_set", default="default", choices=list(MSG_SIZE_SETS.keys()),
                         help="Message size bin set: default | fine | coarse  (default: default)")
     parser.add_argument("--lambda_val", default="auto",
@@ -163,9 +173,20 @@ def main():
                 print("Using piecewise Hockney model fit...")
                 latency_model = fit_latency_model(args.osu_latency_file, rdzv_threshold=RDZV_THRESHOLD)
                         
-            # Unpack the three return values
+            gap_model = None
+            if args.osu_bw_file:
+                if not args.osu_bw_file.exists():
+                    print(f"  [ERROR] OSU bandwidth file not found: {args.osu_bw_file}")
+                else:
+                    if args.bandwidth_method == 'direct':
+                        print("Using direct gap lookup from bandwidth data...")
+                        gap_model = create_direct_gap_model(args.osu_bw_file)
+                    else:
+                        print("Using piecewise linear fit for injection gap...")
+                        gap_model = fit_gap_model(args.osu_bw_file, rdzv_threshold=RDZV_THRESHOLD)
+            
             overlap_time_us, sequential_time_us, heaviest_node_idx = compute_upper_bound_time(
-                x_send, x_recv, msg_sizes, latency_model
+                x_send, x_recv, msg_sizes, latency_model, gap_model
             )
             
             heaviest_node_name = node_names[heaviest_node_idx] if node_names else str(heaviest_node_idx)
