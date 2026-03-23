@@ -294,7 +294,7 @@ def build_matrixA(msg_sizes: np.ndarray = MSG_SIZES) -> np.ndarray:
         msg_sz = int(msg_size)
         data_hist = _message_to_histogram(msg_sz)
         n_data_pkts = int(np.sum(data_hist))
-        ack_hist = _ack_histogram(n_data_pkts)
+        ack_hist = _ack_histogram(msg_size)
         n_ack_pkts = int(np.sum(ack_hist))
 
         # ----------------------------------------------------------
