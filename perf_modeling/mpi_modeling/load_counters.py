@@ -10,12 +10,65 @@ import pandas as pd
 from pathlib import Path
 from typing import Tuple, List, Dict
 
-from constants import (
-    COUNTER_ORDER,
-    TX_HIST_SLICE,
-    RX_HIST_SLICE,
-    M,
-)
+from constants import N_ALL_CNTRS, TX_HIST_SLICE, RX_HIST_SLICE, ALL_CNTRS
+
+
+# =============================================================
+# Top-level loader — single run
+# =============================================================
+def load_counters_single_job(counter_dir: str | Path) -> Tuple[np.ndarray, List[str]]:
+    """
+    Load all hardware counters from the two-level results directory.
+
+    Auto-discovers node directories by finding any subdirectory
+    containing counters.csv. All other files are ignored.
+
+    Parameters
+    ----------
+    counter_dir : str or Path
+        Top-level directory named by SLURM job ID.
+        Example: "/pscratch/.../results/OMB_12345678"
+    """
+    counter_dir = Path(counter_dir)
+
+    if not counter_dir.exists():
+        raise FileNotFoundError(f"Results directory not found: {counter_dir}")
+    if not counter_dir.is_dir():
+        raise NotADirectoryError(f"Not a directory: {counter_dir}")
+
+    print(f"Loading counters from: {counter_dir}")
+
+    # find and sort all subdirs inside counter_dir that contain a counters.csv file. 
+    node_dirs = sorted([
+        d for d in counter_dir.iterdir()
+        if d.is_dir() and (d / "counters.csv").exists()
+    ])
+
+    if len(node_dirs) == 0:
+        raise FileNotFoundError(
+            f"No node directories with counters.csv found under:\n"
+            f"  {counter_dir}\n"
+            f"Expected: {counter_dir}/<node_name>/counters.csv"
+        )
+
+    num_nodes = len(node_dirs)
+
+    # create Y vector with shape (N, 2 * M) where N = num_nodes and M = N_ALL_CNTRS
+    Y = np.zeros((num_nodes, 2 * N_ALL_CNTRS), dtype=np.float64)
+    # create list of node names in the same order as Y
+    node_names: List[str] = []
+
+    for node_idx, node_dir in enumerate(node_dirs):
+        node_names.append(node_dir.name)
+        Y[node_idx, :] = load_node_counters(node_dir / "counters.csv")
+        print(f"  Loaded [{node_idx+1}/{num_nodes}] {node_dir.name}")
+
+    # check loaded data for common issues before returning
+    _validate(Y, node_names)
+
+    print(f"\nDone. Y shape: {Y.shape}  (N={num_nodes} nodes, each has {2 * N_ALL_CNTRS} counters)")
+
+    return Y, node_names
 
 
 # =============================================================
@@ -31,7 +84,7 @@ def load_node_counters(counter_file: Path) -> np.ndarray:
 
     Returns
     -------
-    y_n : np.ndarray, Ordered counter vector following COUNTER_ORDER.
+    y_node : np.ndarray, ordered counter vector y for single node following ALL_CNTRS.
     """
     df = pd.read_csv(counter_file)
 
@@ -45,8 +98,9 @@ def load_node_counters(counter_file: Path) -> np.ndarray:
 
     counter_lookup: Dict[str, float] = dict(zip(df["counter_name"], df["value"]))
 
+    # check that all expected counters are present
     missing = [
-        name for name in COUNTER_ORDER
+        name for name in ALL_CNTRS
         if name not in counter_lookup
     ]
     if missing:
@@ -55,107 +109,13 @@ def load_node_counters(counter_file: Path) -> np.ndarray:
             "\n".join(f"  - {m}" for m in missing)
         )
 
-    y_n = np.array(
-        [counter_lookup[name] for name in COUNTER_ORDER],
-        dtype=np.float64
-    )
+    # create y_node vector in the order of ALL_CNTRS, with TX counters followed by RX counters
+    y_node = np.array([counter_lookup[name] for name in ALL_CNTRS], dtype=np.float64)
 
-    if np.any(y_n < 0):
+    if np.any(y_node < 0):
         raise ValueError(f"{counter_file}: negative counter values detected.")
 
-    return y_n
-
-
-# =============================================================
-# Top-level loader — single run
-# =============================================================
-def load_counters(results_dir: str | Path) -> Tuple[np.ndarray, List[str]]:
-    """
-    Load all hardware counters from the two-level results directory.
-
-    Auto-discovers node directories by finding any subdirectory
-    containing counters.csv. All other files are ignored.
-
-    Parameters
-    ----------
-    results_dir : str or Path
-        Top-level results directory named by SLURM job ID.
-        Example: "/pscratch/.../results/OMB_12345678"
-    """
-    results_dir = Path(results_dir)
-
-    if not results_dir.exists():
-        raise FileNotFoundError(f"Results directory not found: {results_dir}")
-    if not results_dir.is_dir():
-        raise NotADirectoryError(f"Not a directory: {results_dir}")
-
-    print(f"Loading counters from: {results_dir}")
-
-    node_dirs = sorted([
-        d for d in results_dir.iterdir()
-        if d.is_dir() and (d / "counters.csv").exists()
-    ])
-
-    if len(node_dirs) == 0:
-        raise FileNotFoundError(
-            f"No node directories with counters.csv found under:\n"
-            f"  {results_dir}\n"
-            f"Expected: {results_dir}/<node_name>/counters.csv"
-        )
-
-    N = len(node_dirs)
-    Y = np.zeros((N, 2 * M), dtype=np.float64)
-    node_names: List[str] = []
-
-    for n, node_dir in enumerate(node_dirs):
-        node_names.append(node_dir.name)
-        Y[n, :] = load_node_counters(node_dir / "counters.csv")
-        print(f"  Loaded [{n+1}/{N}] {node_dir.name}")
-
-    _validate(Y, node_names)
-
-    print(f"\nDone. Y shape: {Y.shape}  (N={N} nodes, TWO_M={2 * M} counters)")
-
-    return Y, node_names
-
-
-# =============================================================
-# Multi-run loader
-# =============================================================
-def load_multiple_runs(run_dirs: List[str | Path]) -> Tuple[np.ndarray, List[str]]:
-    """
-    Load counter data from multiple runs of the same workload.
-
-    Parameters
-    ----------
-    run_dirs : list of str or Path
-        SLURM job result directories, one per run.
-
-    Returns
-    -------
-    Y_multi : np.ndarray, shape (N, K, 2 * M)
-    node_names : list of str
-    """
-    K = len(run_dirs)
-    all_Y: List[np.ndarray] = []
-    ref_names: List[str] = []
-
-    for k, run_dir in enumerate(run_dirs):
-        Y_k, names_k = load_counters(Path(run_dir))
-
-        if k == 0:
-            ref_names = names_k
-        
-        all_Y.append(Y_k)
-
-    Y_multi = np.stack(all_Y, axis=1)   # (N, K, 2 * M)
-
-    print(f"\nY_multi shape: {Y_multi.shape}  "
-          f"(N={Y_multi.shape[0]} nodes, "
-          f"K={Y_multi.shape[1]} runs, "
-          f"TWO_M={Y_multi.shape[2]} counters)")
-
-    return Y_multi, ref_names
+    return y_node
 
 
 # =============================================================
@@ -163,20 +123,25 @@ def load_multiple_runs(run_dirs: List[str | Path]) -> Tuple[np.ndarray, List[str
 # =============================================================
 def _validate(Y: np.ndarray, node_names: List[str]) -> None:
     """Check loaded counter data for common issues."""
-    N = Y.shape[0]
+    num_nodes = Y.shape[0]
     print("\n  Validating...")
 
+    # make sure all counters are non-negative
     if np.any(Y < 0):
         raise ValueError("Negative counter values detected.")
     print("    [OK] All counters non-negative")
 
-    for n in range(N):
-        if np.all(Y[n, :] == 0):
-            print(f"    [WARN] {node_names[n]}: "
+    # make sure no node has all-zero counters (indicating missing data)
+    for node_idx in range(num_nodes):
+        if np.all(Y[node_idx, :] == 0):
+            print(f"    [WARN] {node_names[node_idx]}: "
                   f"all counters zero — possible missing data")
 
+    # Collect all packet counts from histogram counters
     total_tx = np.sum(Y[:, TX_HIST_SLICE])
     total_rx = np.sum(Y[:, RX_HIST_SLICE])
+    
+    # Check that TX and RX totals are within a reasonable ratio.
     if total_tx > 0 and total_rx > 0:
         ratio  = total_tx / total_rx
         status = "[OK]" if 0.5 <= ratio <= 2.0 else "[WARN]"

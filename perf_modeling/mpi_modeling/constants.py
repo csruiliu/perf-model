@@ -77,15 +77,15 @@ RX_CNTRS: List[str] = RX_HIST_CNTRS + RX_TC_CNTRS
 ALL_CNTRS: List[str] = TX_CNTRS + RX_CNTRS
 
 # Dimensions
-N_HIST_CNTRS: int = len(TX_HIST_CNTRS)
-N_TC_CNTRS: int = len(TX_TC_CNTRS)
-N_ALL_CNTRS: int = N_HIST_CNTRS + N_TC_CNTRS
+NUM_HIST_CNTRS: int = len(TX_HIST_CNTRS)
+NUM_TC_CNTRS: int = len(TX_TC_CNTRS)
+NUM_ALL_CNTRS: int = NUM_HIST_CNTRS + NUM_TC_CNTRS
 
-# Named index slices into a counter vector of length 2 * M
-TX_HIST_SLICE: slice = slice(0, N_HIST_CNTRS)
-TX_TC_SLICE: slice = slice(N_HIST_CNTRS, N_ALL_CNTRS)
-RX_HIST_SLICE: slice = slice(N_ALL_CNTRS, N_ALL_CNTRS + N_HIST_CNTRS)
-RX_TC_SLICE: slice = slice(N_ALL_CNTRS + N_HIST_CNTRS, 2 * N_ALL_CNTRS)
+# Named index slices into a counter vector of length 2 * N_ALL_CNTRS
+TX_HIST_SLICE: slice = slice(0, NUM_HIST_CNTRS)
+TX_TC_SLICE: slice = slice(NUM_HIST_CNTRS, NUM_ALL_CNTRS)
+RX_HIST_SLICE: slice = slice(NUM_ALL_CNTRS, NUM_ALL_CNTRS + NUM_HIST_CNTRS)
+RX_TC_SLICE: slice = slice(NUM_ALL_CNTRS + NUM_HIST_CNTRS, 2 * NUM_ALL_CNTRS)
 
 # =============================================================
 # Message size bins
@@ -162,4 +162,17 @@ RDZV_THRESHOLD: int = 16384   # bytes
 TC_REQ: int = 0   # request packets routed to TC0
 TC_RESP: int = 1  # response packets routed to TC1
 
-
+# =============================================================
+# Empirically confirmed sub-MTU fragmentation map
+# Each tuple is (upper msg_size, [histogram data bucket indices])
+# =============================================================
+SUB_MTU_MAP: List[Tuple[int, List[int]]] = [
+    (11,   [0]),
+    (74,   [1]),
+    (192,  [2]),
+    (202,  [0, 2]),
+    (458,  [0, 3]),
+    (970,  [0, 4]),
+    (1994, [0, 5]),
+    (2048, [0, 6]),
+]
