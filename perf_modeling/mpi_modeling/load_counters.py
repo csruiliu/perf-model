@@ -53,7 +53,7 @@ def load_counters_single_job(counter_dir: str | Path) -> Tuple[np.ndarray, List[
 
     num_nodes = len(node_dirs)
 
-    # create Y vector with shape (N, 2 * M) where N = num_nodes and M = NUM_ALL_CNTRS
+    # create Y vector with shape (num_nodes, 2 * NUM_ALL_CNTRS)
     Y = np.zeros((num_nodes, 2 * NUM_ALL_CNTRS), dtype=np.float64)
     # create list of node names in the same order as Y
     node_names: List[str] = []

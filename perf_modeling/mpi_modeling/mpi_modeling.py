@@ -23,6 +23,7 @@ from pathlib import Path
 from constants import MSG_SIZE_SETS
 from load_counters import load_counters_single_job
 from build_matrix import build_matrixA, validate_matrixA
+from solver import print_solution_summary, solve_global
 
 
 def main():
@@ -37,9 +38,6 @@ def main():
     parser.add_argument("--lambda_val", default="auto",
                         help="Regularization lambda: float or 'auto' (default: auto)")
     
-    parser.add_argument("--solver", default="CLARABEL", choices=["CLARABEL", "SCS", "ECOS"],
-                        help="CVXPY solver backend (default: CLARABEL)")
-    
     args = parser.parse_args()
 
     # Resolve message size set
@@ -53,9 +51,10 @@ def main():
     print("Step 1: Load hardware counters")
     print("=" * 60)
 
+    # Y has shape (num_nodes, 2 * NUM_ALL_CNTRS)
+    # The first NUM_ALL_CNTRS columns are TX counters and the next NUM_ALL_CNTRS columns are RX counters
     Y, node_names = load_counters_single_job(args.counter_dir)    
     Y_for_solver  = Y
-    Y_for_report  = Y
 
     # ----------------------------------------------------------
     # Step 2 — Build signature matrix A
@@ -64,8 +63,22 @@ def main():
     print("Step 2: Build system signature matrix A")
     print("=" * 60)
     
+    # A's shape is (2 * NUM_ALL_CNTRS, 2 * num_msg_sizes)
     A = build_matrixA(msg_size_sets)
-    validate_matrixA(A, msg_size_sets, target_size=128, count=100000, case_name="TEST CASE 1 (Eager Protocol)")
+    #validate_matrixA(A, msg_size_sets, target_size=128, count=100000, case_name="TEST CASE 1 (Eager Protocol)")
+
+    # ----------------------------------------------------------
+    # Step 3 — Solve global optimization
+    # ----------------------------------------------------------
+    print("\n" + "=" * 60)
+    print("Step 3: Solve global optimization")
+    print("=" * 60)
+
+    # X's shape is (num_nodes, 2 * num_msg_size_bins)
+    X, lambdas_used = solve_global(A, Y_for_solver, node_names)
+    print_solution_summary(node_names, lambdas_used, X, msg_size_sets)
+
+
 
 
 if __name__ == "__main__":
