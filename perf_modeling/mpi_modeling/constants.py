@@ -159,8 +159,8 @@ RDZV_THRESHOLD: int = 16384   # bytes
 # =============================================================
 # Traffic class config
 # =============================================================
-TC_REQ: int = 0   # request packets routed to TC0
-TC_RESP: int = 1  # response packets routed to TC1
+TC_DATA: int = 0   # request packets routed to TC0
+TC_ACK: int = 1  # response packets routed to TC1
 
 # =============================================================
 # Empirically confirmed sub-MTU fragmentation map

@@ -20,67 +20,31 @@ Usage:
 import argparse
 from pathlib import Path
 
-from constants import print_constants, MSG_SIZE_SETS, RDZV_THRESHOLD
-from load_counters import load_counters, load_multiple_runs
-from build_matrix import build_matrixA, print_matrix_summary
-from time_estimator import (
-    fit_latency_model, 
-    compute_upper_bound_time, 
-    create_direct_lookup_model, 
-    create_direct_gap_model,
-    fit_gap_model
-)
-from solve_global import (
-    solve_global,
-    solve_global_stacked,
-    print_solution_summary,
-    print_lambda_summary,
-)
+from constants import MSG_SIZE_SETS
+from load_counters import load_counters_single_job
+from build_matrix import build_matrixA, validate_matrixA
 
 
 def main():
     parser = argparse.ArgumentParser(description="MPI Communication Profiler — hardware counter model")
-    parser.add_argument("results_dirs", type=Path, nargs="+",
-                        help="One or more SLURM job result directories (OMB_<job_id>)")
-    parser.add_argument("--osu_latency_file", type=Path, default=None, 
-                        help="Path to OSU latency benchmark output (e.g., osu_latency.txt)")
-    parser.add_argument("--osu_bw_file", type=Path, default=None, 
-                        help="Path to OSU bandwidth benchmark output for Gap model (e.g., osu_bibw.txt)")
-    parser.add_argument("--latency_method", type=str, choices=['fit', 'direct'], default='fit', 
-                        help="Choose 'fit' for the piecewise Hockney model or 'direct' for raw benchmark lookup")
-    parser.add_argument("--bandwidth_method", type=str, choices=['fit', 'direct'], default='fit', 
-                        help="Choose 'fit' to model the injection gap linearly or 'direct' for raw benchmark lookup")
-    parser.add_argument("--msg_set", default="default", choices=list(MSG_SIZE_SETS.keys()),
-                        help="Message size bin set: default | fine | coarse  (default: default)")
+    
+    parser.add_argument("-f", "--counter_dir", type=Path,
+                        help="One SLURM job directories with collected counters (OMB_<job_id>)")
+    
+    parser.add_argument("--msg_set", default="fine", choices=list(MSG_SIZE_SETS.keys()),
+                        help="Message size bin set: fine | coarse | pm (default: fine)")
+    
     parser.add_argument("--lambda_val", default="auto",
                         help="Regularization lambda: float or 'auto' (default: auto)")
-    parser.add_argument("--method", default="lcurve", choices=["lcurve", "loco_cv"],
-                        help="Lambda tuning method (default: lcurve)")
-    parser.add_argument("--n_points", type=int, default=40,
-                        help="Lambda grid size for auto tuning (default: 40)")
+    
     parser.add_argument("--solver", default="CLARABEL", choices=["CLARABEL", "SCS", "ECOS"],
                         help="CVXPY solver backend (default: CLARABEL)")
-    parser.add_argument("--plot", action="store_true", help="Save L-curve plots per node")
-    parser.add_argument("--plot_dir", default="plots", help="Directory for L-curve plots (default: plots/)")
-    parser.add_argument("--print_constants", action="store_true", help="Print all constants and exit")
+    
     args = parser.parse_args()
 
-    if args.print_constants:
-        print_constants()
-
     # Resolve message size set
-    msg_sizes = MSG_SIZE_SETS[args.msg_set]
-    n_msg = len(msg_sizes)
-    print(f"Message size set : '{args.msg_set}'  ({n_msg} bins)")
-
-    # Parse lambda_val — float or 'auto'
-    if args.lambda_val == "auto":
-        lambda_val = "auto"
-    else:
-        try:
-            lambda_val = float(args.lambda_val)
-        except ValueError:
-            parser.error(f"--lambda_val must be a float or 'auto', got '{args.lambda_val}'")
+    msg_size_sets = MSG_SIZE_SETS[args.msg_set]
+    print(f"Message size set : '{msg_size_sets}'  ({len(msg_size_sets)} bins)")
 
     # ----------------------------------------------------------
     # Step 1 — Load hardware counters
@@ -89,16 +53,9 @@ def main():
     print("Step 1: Load hardware counters")
     print("=" * 60)
 
-    n_runs = len(args.results_dirs)
-
-    if n_runs == 1:
-        Y, node_names = load_counters(args.results_dirs[0])
-        Y_for_solver  = Y
-        Y_for_report  = Y
-    else:
-        Y_multi, node_names = load_multiple_runs(args.results_dirs)
-        Y_for_solver        = Y_multi
-        Y_for_report        = Y_multi[:, 0, :]
+    Y, node_names = load_counters_single_job(args.counter_dir)    
+    Y_for_solver  = Y
+    Y_for_report  = Y
 
     # ----------------------------------------------------------
     # Step 2 — Build signature matrix A
@@ -106,95 +63,9 @@ def main():
     print("\n" + "=" * 60)
     print("Step 2: Build system signature matrix A")
     print("=" * 60)
-
-    A = build_matrixA(msg_sizes)
-    print_matrix_summary(A, msg_sizes)
-
-    # ----------------------------------------------------------
-    # Step 3 — Solve global optimization
-    # ----------------------------------------------------------
-    print("\n" + "=" * 60)
-    print("Step 3: Solve global optimization")
-    print("=" * 60)
-
-    solver_kwargs = dict(
-        lambda_val = lambda_val,
-        method = args.method,
-        n_points = args.n_points,
-        node_names = node_names,
-        solver = args.solver,
-        plot = args.plot,
-        plot_dir = args.plot_dir,
-    )
-
-    if n_runs == 1:
-        X, lambdas_used = solve_global(A, Y_for_solver, **solver_kwargs)
-    else:
-        X, lambdas_used = solve_global_stacked(A, Y_for_solver, **solver_kwargs)
-
-    # ----------------------------------------------------------
-    # Step 4 — Report results
-    # ----------------------------------------------------------
-    print("\n" + "=" * 60)
-    print("Step 4: Results")
-    print("=" * 60)
     
-    print_lambda_summary(node_names, lambdas_used, X)
-    print()
-    print_solution_summary(A, X, Y_for_report, node_names, msg_sizes=msg_sizes)
-
-    x_send = X[:, :n_msg]
-    x_recv = X[:, n_msg:] 
-
-    print("\n" + "=" * 60)
-    print("Output shapes ready for downstream use:")
-    print("=" * 60)
-    print(f"  X      : {X.shape}  (N nodes, 2*N_MSG bins)")
-    print(f"  x_send : {x_send.shape}  (N nodes, N_MSG send bins)")
-    print(f"  x_recv : {x_recv.shape}  (N nodes, N_MSG recv bins)")
-
-    # ----------------------------------------------------------
-    # Step 5 — Estimate Communication Time Upper Bound
-    # ----------------------------------------------------------
-    if args.osu_latency_file:
-        print("\n" + "=" * 60)
-        print("Step 5: Estimate Communication Time Upper Bound")
-        print("=" * 60)
-        
-        if not args.osu_latency_file.exists():
-            print(f"  [ERROR] OSU latency file not found: {args.osu_latency_file}")
-        else:
-            # Choose the latency calculation method based on a command-line flag
-            # Assuming you added args.latency_method which defaults to 'fit'
-            if args.latency_method == 'direct':
-                print("Using direct raw latency lookup...")
-                latency_model = create_direct_lookup_model(args.osu_latency_file)
-            else:
-                print("Using piecewise Hockney model fit...")
-                latency_model = fit_latency_model(args.osu_latency_file, rdzv_threshold=RDZV_THRESHOLD)
-                        
-            gap_model = None
-            if args.osu_bw_file:
-                if not args.osu_bw_file.exists():
-                    print(f"  [ERROR] OSU bandwidth file not found: {args.osu_bw_file}")
-                else:
-                    if args.bandwidth_method == 'direct':
-                        print("Using direct gap lookup from bandwidth data...")
-                        gap_model = create_direct_gap_model(args.osu_bw_file)
-                    else:
-                        print("Using piecewise linear fit for injection gap...")
-                        gap_model = fit_gap_model(args.osu_bw_file, rdzv_threshold=RDZV_THRESHOLD)
-            
-            overlap_time_us, sequential_time_us, heaviest_node_idx = compute_upper_bound_time(
-                x_send, x_recv, msg_sizes, latency_model, gap_model
-            )
-            
-            heaviest_node_name = node_names[heaviest_node_idx] if node_names else str(heaviest_node_idx)
-            
-            print("\n  === Time Estimation Results ===")
-            print(f"  Heaviest communicating node : {heaviest_node_name}")
-            print(f"  Overlap mode (Max node time): {overlap_time_us / 1e6:.4f} seconds")
-            print(f"  Sequential mode (Total time): {sequential_time_us / 1e6:.4f} seconds")
+    A = build_matrixA(msg_size_sets)
+    validate_matrixA(A, msg_size_sets, target_size=128, count=100000, case_name="TEST CASE 1 (Eager Protocol)")
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Tuple, List, Dict
 
-from constants import N_ALL_CNTRS, TX_HIST_SLICE, RX_HIST_SLICE, ALL_CNTRS
+from constants import NUM_ALL_CNTRS, TX_HIST_SLICE, RX_HIST_SLICE, ALL_CNTRS
 
 
 # =============================================================
@@ -53,8 +53,8 @@ def load_counters_single_job(counter_dir: str | Path) -> Tuple[np.ndarray, List[
 
     num_nodes = len(node_dirs)
 
-    # create Y vector with shape (N, 2 * M) where N = num_nodes and M = N_ALL_CNTRS
-    Y = np.zeros((num_nodes, 2 * N_ALL_CNTRS), dtype=np.float64)
+    # create Y vector with shape (N, 2 * M) where N = num_nodes and M = NUM_ALL_CNTRS
+    Y = np.zeros((num_nodes, 2 * NUM_ALL_CNTRS), dtype=np.float64)
     # create list of node names in the same order as Y
     node_names: List[str] = []
 
@@ -66,7 +66,7 @@ def load_counters_single_job(counter_dir: str | Path) -> Tuple[np.ndarray, List[
     # check loaded data for common issues before returning
     _validate(Y, node_names)
 
-    print(f"\nDone. Y shape: {Y.shape}  (N={num_nodes} nodes, each has {2 * N_ALL_CNTRS} counters)")
+    print(f"\nDone. Y shape: {Y.shape}  (N={num_nodes} nodes, each has {2 * NUM_ALL_CNTRS} counters)")
 
     return Y, node_names
 
