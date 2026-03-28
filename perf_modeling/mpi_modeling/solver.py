@@ -77,7 +77,7 @@ def loco_cv_method(A: np.ndarray, y: np.ndarray) -> float:
     """
     two_num_all_cntrs = len(y)
 
-    c_n_points  = 40
+    c_n_points  = 50
     c_min_factor = 0.01   # 1%  of unconstrained norm → very sparse
     c_max_factor = 1.00   # 100% of unconstrained norm → effectively unconstrained
 
@@ -138,19 +138,24 @@ def solve_constrained_optimization(A: np.ndarray, y: np.ndarray, c: float) -> np
     two_num_msg_sizes = A.shape[1]
     x = cp.Variable(two_num_msg_sizes, nonneg=True)
 
-    objective   = cp.Minimize(cp.sum_squares(A @ x - y))
+    objective = cp.Minimize(cp.sum_squares(A @ x - y))
     constraints = [cp.sum(x) <= c]
 
     prob = cp.Problem(objective, constraints)
 
-    try:
-        prob.solve(solver="SCS", verbose=False)
-    except cp.SolverError:
-        warnings.warn("SCS failed. Returning zeros.")
-        return np.zeros(two_num_msg_sizes)
+    solver_list = ["CLARABEL", "OSQP", "SCS", "ECOS"]
+
+    for solver in solver_list:
+        try:
+            prob.solve(solver=solver, verbose=False)
+            if x.value is not None and prob.status == cp.OPTIMAL:
+                break  # Only exit if a valid solution was found
+            warnings.warn(f"Solver {solver} returned None or failed to converge. Trying the next solver.")
+        except cp.SolverError:
+            warnings.warn(f"Solver {solver} failed. Trying the next solver.")
 
     if x.value is None:
-        warnings.warn("Solver returned None. Returning zeros.")
+        warnings.warn("All solvers failed or returned None. Returning zeros.")
         return np.zeros(two_num_msg_sizes)
 
     return np.clip(x.value, 0, None)
@@ -173,7 +178,7 @@ def compute_c_baseline(A: np.ndarray, y: np.ndarray) -> float:
     """
     x_nnls, _ = nnls(A, y)
     c_baseline = float(np.sum(x_nnls))
-
+    
     if c_baseline == 0:
         warnings.warn("Unconstrained NNLS solution is zero — y may be all zeros.")
         return 1e-6
