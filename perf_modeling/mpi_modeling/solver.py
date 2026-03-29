@@ -47,7 +47,7 @@ def solve_global(A: np.ndarray,
 
         y_nid = Y[node_idx, :]
         print(f"  Auto-tuning lambda (residual tolerance):")
-        lam = find_lambda_cv(A, y_nid)
+        lam = find_lambda_cv(A, y_nid, max_extensions=5)
         x_nid = solve_constrained_optimization(A, y_nid, lam)
         X[node_idx, :] = x_nid
         lambda_used_list.append(lam)
@@ -62,69 +62,107 @@ def solve_global(A: np.ndarray,
 # =============================================================
 # Lambda selection via Leave-One-Counter-Out Cross Validation
 # =============================================================
-def find_lambda_cv(A: np.ndarray, y: np.ndarray) -> float:
+def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> float:
     """
     Automatic lambda selection via Leave-One-Counter-Out CV.
+
+    If the optimal lambda lands on a grid boundary, the grid is automatically
+    extended in that direction and CV is re-run on the new region only.
+    Results are accumulated across all extensions and the global best is returned.
+
+    Parameters
+    ----------
+    A              : System matrix (shape: m x n)
+    y              : Observation vector (shape: m,)
+    max_extensions : Maximum number of grid extensions before giving up (default: 5)
 
     Returns
     -------
     lambda_opt : float
     """
-    m = len(y)
-    
-    lam_n_points = 50
+    m            = len(y)
+    lam_n_points = 40
+    extend_factor = 10.0
 
     lam_min, lam_balance = compute_lambda_baseline(A, y)
-
-    # Grid from the KKT transition point to well above the balance point
     lam_lo = lam_min
-    lam_hi = lam_balance * 1000.0
-    lambda_grid = np.logspace(
-        np.log10(lam_lo),
-        np.log10(lam_hi),
-        lam_n_points
-    )
+    lam_hi = lam_balance * 10.0
 
-    print(f"    lam_min = {lam_min:.3e}")
-    print(f"    lam_balance = {lam_balance:.3e}")
-    print(f"    lambda grid : [{lambda_grid[0]:.3e}, {lambda_grid[-1]:.3e}]"
-          f"  ({lam_n_points} points, {m} folds each)")
+    print(f"    lam_min (KKT transition) = {lam_min:.3e}")
+    print(f"    lam_balance (NNLS)       = {lam_balance:.3e}")
 
-    cv_errors = np.zeros(lam_n_points)
+    # Accumulate all (lambda, cv_error) pairs across extensions
+    # so we can find the global best at the end
+    all_lambdas   = []
+    all_cv_errors = []
 
-    for i, lam in enumerate(lambda_grid):
-        # initialize array to hold errors for each fold
-        fold_errors = np.zeros(m)
+    found_interior = False
 
-        # LOCO-CV: For each counter k, leave it out, solve LASSO on the remaining counters
-        # and compute the squared error on the left-out counter k.
-        for k in range(m):
-            mask = np.ones(m, dtype=bool)
-            # False means "exclude this element" using the boolean mask
-            mask[k] = False
-            x_k = solve_constrained_optimization(A[mask, :], y[mask], lam)
-            fold_errors[k] = (A[k, :] @ x_k - y[k]) ** 2
-
-        cv_errors[i] = np.mean(fold_errors)
-
-    # find the lambda with the lowest CV error
-    best_idx = int(np.argmin(cv_errors))
-    lambda_opt = float(lambda_grid[best_idx])
-
-    # Warn if the optimum is at a grid boundary — grid may be too narrow
-    if best_idx == 0:
-        warnings.warn(
-            f"Optimal lambda is at the lower grid boundary ({lambda_opt:.3e}). "
-            f"Consider extending the grid downward."
-        )
-    elif best_idx == lam_n_points - 1:
-        warnings.warn(
-            f"Optimal lambda is at the upper grid boundary ({lambda_opt:.3e}). "
-            f"Consider extending the grid upward."
+    for attempt in range(max_extensions + 1):
+        lambda_grid = np.logspace(
+            np.log10(lam_lo),
+            np.log10(lam_hi),
+            lam_n_points
         )
 
-    print(f"    lambda_opt = {lambda_opt:.3e}  (index {best_idx}/{lam_n_points-1})")
-    print(f"    CV error   = {cv_errors[best_idx]:.4f}")
+        print(f"    Attempt {attempt + 1}: searching "
+              f"[{lambda_grid[0]:.3e}, {lambda_grid[-1]:.3e}] "
+              f"({lam_n_points} points, {m} LOCO folds each)")
+
+        # Run LOCO-CV on this grid segment
+        cv_errors = np.zeros(lam_n_points)
+        for i, lam in enumerate(lambda_grid):
+            fold_errors = np.zeros(m)
+            for k in range(m):
+                mask    = np.ones(m, dtype=bool)
+                mask[k] = False
+                x_k     = solve_constrained_optimization(A[mask, :], y[mask], lam)
+                fold_errors[k] = (A[k, :] @ x_k - y[k]) ** 2
+            cv_errors[i] = np.mean(fold_errors)
+
+        # Accumulate results
+        all_lambdas.extend(lambda_grid.tolist())
+        all_cv_errors.extend(cv_errors.tolist())
+
+        local_best_idx = int(np.argmin(cv_errors))
+        at_lower = (local_best_idx == 0)
+        at_upper = (local_best_idx == lam_n_points - 1)
+
+        if not at_lower and not at_upper:
+            # Optimum is interior — no need to extend further
+            found_interior = True
+            break
+
+        if attempt < max_extensions:
+            if at_lower:
+                print(f"    Optimal at lower boundary ({lambda_grid[0]:.3e}). "
+                      f"Extending grid downward by factor {extend_factor}.")
+                # Shift the search window downward, no overlap with current window
+                lam_hi = lam_lo
+                lam_lo = lam_lo / extend_factor
+            else:
+                print(f"    Optimal at upper boundary ({lambda_grid[-1]:.3e}). "
+                      f"Extending grid upward by factor {extend_factor}.")
+                # Shift the search window upward, no overlap with current window
+                lam_lo = lam_hi
+                lam_hi = lam_hi * extend_factor
+
+    if not found_interior:
+        warnings.warn(
+        f"Grid extension limit ({max_extensions}) reached. "
+            f"lambda_opt may not be the true optimum. "
+            f"Consider increasing max_extensions or checking your data."
+        )
+
+    # Find global best across all accumulated searches
+    all_lambdas_arr   = np.array(all_lambdas)
+    all_cv_errors_arr = np.array(all_cv_errors)
+    global_best_idx   = int(np.argmin(all_cv_errors_arr))
+    lambda_opt        = float(all_lambdas_arr[global_best_idx])
+
+    print(f"    lambda_opt = {lambda_opt:.3e}  "
+          f"(found in attempt {attempt + 1})")
+    print(f"    CV error   = {all_cv_errors_arr[global_best_idx]:.4f}")
 
     return lambda_opt
 
