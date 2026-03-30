@@ -72,8 +72,8 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
 
     Parameters
     ----------
-    A              : System matrix (shape: m x n)
-    y              : Observation vector (shape: m,)
+    A : System matrix (shape: m x n)
+    y : Observation vector (shape: m,)
     max_extensions : Maximum number of grid extensions before giving up (default: 5)
 
     Returns
@@ -114,9 +114,9 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
         for i, lam in enumerate(lambda_grid):
             fold_errors = np.zeros(m)
             for k in range(m):
-                mask    = np.ones(m, dtype=bool)
+                mask = np.ones(m, dtype=bool)
                 mask[k] = False
-                x_k     = solve_constrained_optimization(A[mask, :], y[mask], lam)
+                x_k = solve_constrained_optimization(A[mask, :], y[mask], lam)
                 fold_errors[k] = (A[k, :] @ x_k - y[k]) ** 2
             cv_errors[i] = np.mean(fold_errors)
 
@@ -155,10 +155,10 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
         )
 
     # Find global best across all accumulated searches
-    all_lambdas_arr   = np.array(all_lambdas)
+    all_lambdas_arr = np.array(all_lambdas)
     all_cv_errors_arr = np.array(all_cv_errors)
-    global_best_idx   = int(np.argmin(all_cv_errors_arr))
-    lambda_opt        = float(all_lambdas_arr[global_best_idx])
+    global_best_idx = int(np.argmin(all_cv_errors_arr))
+    lambda_opt = float(all_lambdas_arr[global_best_idx])
 
     print(f"    lambda_opt = {lambda_opt:.3e}  "
           f"(found in attempt {attempt + 1})")
@@ -172,56 +172,62 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
 # =============================================================
 def solve_constrained_optimization(A: np.ndarray, y: np.ndarray, lam: float) -> np.ndarray:
     """
-    Solve the constrained optimization problem:
+    Solve sparse recovery using L1 + LS (two-stage):
 
-        min_{x >= 0}  ||x||_1
-        s.t.          ||Ax - y||_2^2 <= epsilon
-
-    The above is equivalent to the LASSO formulation:
-
-        min_{x >= 0}  ||x||_1 + lambda * ||Ax - y||_2^2
-
-    Since x >= 0, ||x||_1 = sum(x), so the objective simplifies to:
-
+    Stage 1 - Plain L1 (support identification):
         min_{x >= 0}  sum(x) + lambda * ||Ax - y||_2^2
 
-    Minimizing the L1 norm encourages sparsity. The squared L2 term
-    penalizes the residual between the reconstructed vector Ax and the
-    observed vector y. lambda controls the trade-off between sparsity
-    and reconstruction accuracy.
+    Stage 2 - NNLS on identified support:
+        min_{x_S >= 0}  ||A[:, S] x_S - y||_2
 
     Args:
-        A       : System matrix (shape: m x n)
-        y       : Observation vector (shape: m,)
-        lam     : Regularization parameter.
-                  Larger lam → tighter fit, denser x.
-                  Smaller lam → looser fit, sparser x.
+        A: System matrix (shape: m x n)
+        y: Observation vector (shape: m,)
+        lam: Regularization parameter
     """
     n = A.shape[1]
-    x = cp.Variable(n, nonneg=True)  # Non-negative variable for message size bins
-
-    # Since x >= 0, ||x||_1 = sum(x), so we can simplify the objective
-    objective = cp.Minimize(cp.sum(x) + lam * cp.sum_squares(A @ x - y))
-
-    prob = cp.Problem(objective)  # No explicit constraints since nonneg is handled by the variable
-
-    # Try multiple solvers in order of preference
     solver_list = ["CLARABEL", "SCS", "ECOS", "OSQP", "CVXOPT"]
+
+    # -------------------------
+    # Stage 1: Plain L1
+    # -------------------------
+    x = cp.Variable(n, nonneg=True)
+    objective = cp.Minimize(cp.sum(x) + lam * cp.sum_squares(A @ x - y))
+    prob = cp.Problem(objective)
 
     for solver in solver_list:
         try:
             prob.solve(solver=solver, verbose=False)
             if x.value is not None and prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
                 break
-            warnings.warn(f"Solver {solver} returned None or failed to converge. Trying the next solver.")
+            warnings.warn(f"Solver {solver} failed. Trying next solver.")
         except cp.SolverError:
-            warnings.warn(f"Solver {solver} failed. Trying the next solver.")
+            warnings.warn(f"Solver {solver} failed. Trying next solver.")
 
     if x.value is None:
         warnings.warn("All solvers failed. Returning zeros.")
         return np.zeros(n)
 
-    return x.value
+    # -------------------------
+    # Stage 2: NNLS on support
+    # -------------------------
+    #support_threshold: Variables below this after Stage 1 are treated as zero
+    support_threshold = 5e-2
+
+    active_mask = x.value > support_threshold
+
+    if not np.any(active_mask):
+        warnings.warn(
+            "No active variables found after L1. "
+            "Consider lowering support_threshold or adjusting lambda."
+        )
+        return x.value
+
+    x_active, _ = nnls(A[:, active_mask], y)
+    x_refined = np.zeros(n)
+    x_refined[active_mask] = x_active
+
+    return x_refined
 
 
 # =============================================================
