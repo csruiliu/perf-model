@@ -47,9 +47,9 @@ def build_matrixA(msg_size_sets: np.ndarray) -> np.ndarray:
         sender TX --> TC_DATA,  sender RX --> TC_ACK
         recv   TX --> TC_ACK,   recv   RX --> TC_DATA
 
-    rendezvous (msg_size > RENDEZVOUS_THRESHOLD):
-        sender TX --> TC_ACK,   sender RX --> TC_DATA   (flip via _sender_tc)
-        recv   TX --> TC_ACK,   recv   RX --> TC_DATA   (unchanged)
+    rendezvous:
+        sender TX --> TC_ACK,   sender RX --> TC_DATA   (flipped)
+        recv   TX --> TC_DATA,  recv   RX --> TC_ACK    (also flipped)
     """
     print("  Validating sub-MTU empirical mapping...")
     _validate_sub_mtu_mapping()
