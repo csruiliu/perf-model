@@ -60,7 +60,7 @@ def build_matrixA(msg_size_sets: np.ndarray) -> np.ndarray:
     for msg_idx, msg_size in enumerate(msg_size_sets):
         data_hist = _message_to_histogram(int(msg_size))
         num_data_pkts = int(np.sum(data_hist))
-        ack_hist = _ack_histogram(msg_size)
+        ack_hist = _ack_histogram(int(msg_size))
         num_ack_pkts = int(np.sum(ack_hist))
 
         # ----------------------------------------------------------
@@ -115,7 +115,11 @@ def _message_to_histogram(msg_size: int) -> np.ndarray:
                     for b in buckets:
                         hist_counters[b] += 1
                     break
-        
+        else:
+            # If remainder is 0, an eager control packet is still sent!
+            if msg_size <= RDZV_THRESHOLD:
+                hist_counters[0] += 1
+
         # Rendezvous messages > MTU produce one additional control packet in the smallest histogram bin, i.e, 64B. 
         if msg_size > RDZV_THRESHOLD:
             hist_counters[0] += 1

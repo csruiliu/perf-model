@@ -1,5 +1,5 @@
 """
-solve_global.py
+solver.py
 
 Solves the MPI communication model for all nodes.
 
@@ -81,7 +81,7 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
     lambda_opt : float
     """
     m            = len(y)
-    lam_n_points = 40
+    lam_n_points = 50
     extend_factor = 10.0
 
     lam_min, lam_balance = compute_lambda_baseline(A, y)
@@ -212,7 +212,7 @@ def solve_constrained_optimization(A: np.ndarray, y: np.ndarray, lam: float) -> 
     # Stage 2: NNLS on support
     # -------------------------
     #support_threshold: Variables below this after Stage 1 are treated as zero
-    support_threshold = 5e-2
+    support_threshold = 0.01
 
     active_mask = x.value > support_threshold
 
