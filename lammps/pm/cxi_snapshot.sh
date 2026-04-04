@@ -3,7 +3,7 @@
 # =============================================================
 # cxi_snapshot.sh
 #
-# Usage: ./cxi_snapshot.sh <prefix> <duration>
+# Usage: ./cxi_snapshot.sh <prefix>
 #
 # Supports multiple CXI NICs. For each NIC discovered under
 # /sys/class/cxi/cxiN/, snapshots are written to a per-NIC
@@ -11,11 +11,10 @@
 # =============================================================
 
 PREFIX=$1
-DURATION=${2:-10}
 
 # Validate arguments
 if [ -z "$PREFIX" ]; then
-    echo "Usage: $0 <prefix> [duration_seconds]"
+    echo "Usage: $0 <prefix>"
     exit 1
 fi
 
@@ -131,7 +130,6 @@ echo "=============================================="
 echo "cxi_snapshot.sh"
 echo "  Node       : ${NODE}"
 echo "  Prefix     : ${PREFIX}"
-echo "  Duration   : ${DURATION}s"
 echo "  RESULTS_DIR: ${RESULTS_DIR}"
 echo "  TX counters: ${#TX_COUNTERS[@]}"
 echo "  RX counters: ${#RX_COUNTERS[@]}"
@@ -160,8 +158,6 @@ if [ "${PREFIX}" == "before" ]; then
 # ------------------------------------------------------------------
 else  # PREFIX == "after"
 # ------------------------------------------------------------------
-    echo "Waiting ${DURATION} seconds for stability on ${NODE}..."
-    sleep "${DURATION}"
     echo "Taking '${PREFIX}' snapshot on ${NODE}..."
     echo ""
 

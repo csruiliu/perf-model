@@ -73,16 +73,12 @@ hni_rx_ok_4096_to_8191 \
 hni_pkts_recv_by_tc_0 \
 hni_pkts_recv_by_tc_1"
 
-# Time windows for before/after snapshot collection (in seconds)
-BEFORE_DURATION=10
-AFTER_DURATION=10
-
 # sample interval
 export SAMPLE_INTERVAL=1
 export DCGM_DELAY=1000
 
 # GPU-aware MPI settings for Cray Slingshot (Perlmutter)
-export MPICH_GPU_SUPPORT_ENABLED=0
+export MPICH_GPU_SUPPORT_ENABLED=1
 
 # Create folder for IPM logs if not exists
 mkdir -p $IPM_LOGDIR
@@ -125,8 +121,8 @@ module load craype-accel-nvidia80
 input="-k on g 1 -sf kk -pk kokkos newton on neigh half ${BENCH_SPEC}"
 
 # Collect baseline counters BEFORE benchmark
-echo "Collecting baseline telemetry for ${BEFORE_DURATION} seconds..."
-srun -N 2 --ntasks-per-node=1 ./cxi_snapshot.sh before ${BEFORE_DURATION}
+echo "Collecting baseline telemetry before running benchmark..."
+srun -N 2 --ntasks-per-node=1 ./cxi_snapshot.sh before
 
 echo "=== Node Assignment for LAMMPS ===" > ${RESULTS_DIR}/runtime.out
 
@@ -139,8 +135,8 @@ end=$(date +%s.%N)
 echo "======================================" >> ${RESULTS_DIR}/runtime.out
 
 # Collect final counters AFTER benchmark
-echo "Collecting final telemetry for ${AFTER_DURATION} seconds..."
-srun -N 2 --ntasks-per-node=1 ./cxi_snapshot.sh after ${AFTER_DURATION}
+echo "Collecting final telemetry..."
+srun -N 2 --ntasks-per-node=1 ./cxi_snapshot.sh after
 
 elapsed=$(printf "%s - %s\n" $end $start | bc -l)
 
