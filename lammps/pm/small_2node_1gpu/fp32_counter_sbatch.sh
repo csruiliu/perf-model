@@ -13,7 +13,12 @@
 #SBATCH --perf=generic
 #SBATCH --exclusive
 #SBATCH -t 00:30:00
-#SBATCH -o /global/homes/r/ruiliu/perf-model-dcgm/lammps/pm/results/LPS_SMALL_FP32_CNTR_%j/%j.out
+#SBATCH -o /global/homes/r/ruiliu/perf-model-dcgm/lammps/pm/results/LPS_SMALL_FP32_CTR_%j/%j.out
+
+# Load necessary modules for GPU and CUDA support
+module load PrgEnv-gnu
+module load cudatoolkit
+module load craype-accel-nvidia80
 
 # Start DCGM container on all nodes before srun
 #srun -N 2 --ntasks-per-node=1 podman-hpc run -d -it --name dcgm-container-${SLURM_JOB_ID} --rm --gpu \
@@ -21,11 +26,12 @@
 #    nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
 
 # Wait a moment for the DCGM container to start and initialize
-sleep 5
+#sleep 5
 
 # IPM Path and Settings
 export IPM_HOME=/pscratch/sd/r/ruiliu/IPM/install
 export IPM_LOGDIR=/pscratch/sd/r/ruiliu/ipm-logs/lammps
+export LD_PRELOAD=${IPM_HOME}/lib/libipm.so
 export IPM_LOG=full
 export IPM_REPORT=terse
 
@@ -35,7 +41,7 @@ export LAMMPS_COMM="/global/homes/r/ruiliu/perf-model-dcgm/lammps/common"
 export LAMMPS_PM="/global/homes/r/ruiliu/perf-model-dcgm/lammps/pm"
 
 # Results directory for this job
-export RESULTS_DIR="${LAMMPS_PM}/results/LPS_SMALL_FP32_CNTR_${SLURM_JOB_ID}"
+export RESULTS_DIR="${LAMMPS_PM}/results/LPS_SMALL_FP32_CTR_${SLURM_JOB_ID}"
 
 # OMP Settings for LAMMPS
 export OMP_NUM_THREADS=16
@@ -78,7 +84,7 @@ export SAMPLE_INTERVAL=1
 export DCGM_DELAY=1000
 
 # GPU-aware MPI settings for Cray Slingshot (Perlmutter)
-export MPICH_GPU_SUPPORT_ENABLED=1
+export MPICH_GPU_SUPPORT_ENABLED=0
 
 # Create folder for IPM logs if not exists
 mkdir -p $IPM_LOGDIR
@@ -111,11 +117,6 @@ BENCH_SPEC="\
 
 # LAMMPS executable and input settings
 EXE="${LAMMPS_DIR}/install_lammps/bin/lmp"
-
-# Load necessary modules for GPU and CUDA support
-module load PrgEnv-gnu
-module load cudatoolkit
-module load craype-accel-nvidia80
 
 # -k on g 1: 1 GPU per MPI rank (correct for 2 ranks x 1 GPU each)
 input="-k on g 1 -sf kk -pk kokkos newton on neigh half ${BENCH_SPEC}"
