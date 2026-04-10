@@ -18,10 +18,10 @@ from constants import NUM_ALL_CNTRS, TX_HIST_SLICE, RX_HIST_SLICE, ALL_CNTRS
 # =============================================================
 def load_counters_single_job(counter_dir: str | Path) -> Tuple[np.ndarray, List[str]]:
     """
-    Load all hardware counters from the two-level results directory.
+    Load all hardware counters from the three-level results directory.
 
     Auto-discovers node directories by finding any subdirectory
-    containing counters.csv. All other files are ignored.
+    containing cxi0/counters.csv. All other files are ignored.
 
     Parameters
     ----------
@@ -38,17 +38,17 @@ def load_counters_single_job(counter_dir: str | Path) -> Tuple[np.ndarray, List[
 
     print(f"Loading counters from: {counter_dir}")
 
-    # find and sort all subdirs inside counter_dir that contain a counters.csv file. 
+    # find and sort all subdirs inside counter_dir that contain a cxi0/counters.csv file.
     node_dirs = sorted([
         d for d in counter_dir.iterdir()
-        if d.is_dir() and (d / "counters.csv").exists()
+        if d.is_dir() and (d / "cxi0" / "counters.csv").exists()
     ])
 
     if len(node_dirs) == 0:
         raise FileNotFoundError(
             f"No node directories with counters.csv found under:\n"
             f"  {counter_dir}\n"
-            f"Expected: {counter_dir}/<node_name>/counters.csv"
+            f"Expected: {counter_dir}/<node_name>/cxi0/counters.csv"
         )
 
     num_nodes = len(node_dirs)
@@ -60,7 +60,7 @@ def load_counters_single_job(counter_dir: str | Path) -> Tuple[np.ndarray, List[
 
     for node_idx, node_dir in enumerate(node_dirs):
         node_names.append(node_dir.name)
-        Y[node_idx, :] = load_node_counters(node_dir / "counters.csv")
+        Y[node_idx, :] = load_node_counters(node_dir / "cxi0" / "counters.csv")
         print(f"  Loaded [{node_idx+1}/{num_nodes}] {node_dir.name}")
 
     # check loaded data for common issues before returning
