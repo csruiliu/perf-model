@@ -9,73 +9,126 @@ bar_width = 0.5
 
 # --- Placeholder data ---
 # Top panel: Rank-0 'Sender' — stacked bars: hni_tx_ok_64, hni_tx_ok_65to127, hni_tx_ok_128to256
-sender_tx_ok_27             = [0, 0, 0]
-sender_tx_ok_35             = [0, 0, 0]
-sender_tx_ok_36_to_63       = [0, 0, 0]
-sender_tx_ok_64             = [2, 2, 2]
-sender_tx_ok_512_to_1023    = [1, 0, 0]
-sender_tx_ok_1024_to_2047   = [0, 1, 0]
-sender_tx_ok_2048_to_4095   = [0, 0, 1]
+sender_tx_ok_27 = [0, 0, 0]
+sender_tx_ok_35 = [0, 0, 0]
+sender_tx_ok_36_to_63 = [0, 0, 0]
+sender_tx_ok_64 = [2, 2, 2]
+sender_tx_ok_512_to_1023 = [1, 0, 0]
+sender_tx_ok_1024_to_2047 = [0, 1, 0]
+sender_tx_ok_2048_to_4095 = [0, 0, 1]
 
 # Bottom panel: Rank-1 'Receiver' — stacked bar: hni_rx_ok_64, etc.
-receiver_rx_ok_27            = [0, 0, 0]
-receiver_rx_ok_35            = [0, 0, 0]
-receiver_rx_ok_36_to_63      = [0, 0, 0]
-receiver_rx_ok_64            = [2, 2, 2]
-receiver_rx_ok_512_to_1023   = [1, 0, 0]
-receiver_rx_ok_1024_to_2047  = [0, 1, 0]
-receiver_rx_ok_2048_to_4095  = [0, 0, 1]
+receiver_rx_ok_27 = [0, 0, 0]
+receiver_rx_ok_35 = [0, 0, 0]
+receiver_rx_ok_36_to_63 = [0, 0, 0]
+receiver_rx_ok_64 = [2, 2, 2]
+receiver_rx_ok_512_to_1023 = [1, 0, 0]
+receiver_rx_ok_1024_to_2047 = [0, 1, 0]
+receiver_rx_ok_2048_to_4095 = [0, 0, 1]
 
 # --- Colors for stacked segments ---
-colors = ['snow','snow','snow','#2c2c2c', '#7a7a7a', '#c0c0c0', '#f0f0f0']   # dark, mid, light grey
-hatch_patterns = ['xx', 'oo', '++','','','','']
+colors = [
+    "snow",
+    "snow",
+    "snow",
+    "#2c2c2c",
+    "#7a7a7a",
+    "#c0c0c0",
+    "#f0f0f0",
+]  # dark, mid, light grey
+hatch_patterns = ["xx", "oo", "++", "", "", "", ""]
 
 # --- Figure with 2 subplots side by side ---
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-fig.suptitle('OSU_BW', fontsize=15, fontweight='bold')
+fig.suptitle("OSU_BW", fontsize=15, fontweight="bold")
+
 
 # ── Helper to draw a stacked bar subplot ─────────────────────────────────────
 def draw_stacked_bar(ax, title, layers, layer_labels, colors, x, bar_width, message_sizes):
     bottoms = np.zeros(len(x))
-    for layer, label, color, hatch in zip(layers, layer_labels, colors, hatch_patterns):
-        ax.bar(x, layer, bar_width, bottom=bottoms,
-               label=label, color=color, edgecolor='black', linewidth=0.7, hatch=hatch)
+    for layer, label, color, hatch in zip(
+        layers, layer_labels, colors, hatch_patterns, strict=True
+    ):
+        ax.bar(
+            x,
+            layer,
+            bar_width,
+            bottom=bottoms,
+            label=label,
+            color=color,
+            edgecolor="black",
+            linewidth=0.7,
+            hatch=hatch,
+        )
         bottoms += np.array(layer)
 
     ax.set_title(title, fontsize=12)
-    ax.set_ylabel('Counts Per Message', fontsize=11)
-    ax.set_xlabel('MPI Message Size', fontsize=11)
+    ax.set_ylabel("Counts Per Message", fontsize=11)
+    ax.set_xlabel("MPI Message Size", fontsize=11)
     ax.set_xticks(x)
     ax.set_ylim(0, 5)
-    ax.set_yticks([1,2,3,4,5])
+    ax.set_yticks([1, 2, 3, 4, 5])
     ax.set_xticklabels([str(s) for s in message_sizes_label])
-    ax.legend(loc='upper left', fontsize=9, frameon=True)
-    ax.grid(axis='y', linestyle='--', alpha=0.5)
+    ax.legend(loc="upper left", fontsize=9, frameon=True)
+    ax.grid(axis="y", linestyle="--", alpha=0.5)
     ax.set_axisbelow(True)
+
 
 # ── Top subplot: Rank-0 'Sender' ─────────────────────────────────────────────
 draw_stacked_bar(
     ax=ax1,
     title="Rank-0  'Sender'",
-    layers=[sender_tx_ok_27, sender_tx_ok_35, sender_tx_ok_36_to_63, sender_tx_ok_64, sender_tx_ok_512_to_1023, sender_tx_ok_1024_to_2047, sender_tx_ok_2048_to_4095],
-    layer_labels=['hni_tx_ok_27', 'hni_tx_ok_35', 'hni_tx_ok_36_to_63', 'hni_tx_ok_64', 'hni_tx_ok_512_to_1023', 'hni_tx_ok_1024_to_2047', 'hni_tx_ok_2048_to_4095'],
+    layers=[
+        sender_tx_ok_27,
+        sender_tx_ok_35,
+        sender_tx_ok_36_to_63,
+        sender_tx_ok_64,
+        sender_tx_ok_512_to_1023,
+        sender_tx_ok_1024_to_2047,
+        sender_tx_ok_2048_to_4095,
+    ],
+    layer_labels=[
+        "hni_tx_ok_27",
+        "hni_tx_ok_35",
+        "hni_tx_ok_36_to_63",
+        "hni_tx_ok_64",
+        "hni_tx_ok_512_to_1023",
+        "hni_tx_ok_1024_to_2047",
+        "hni_tx_ok_2048_to_4095",
+    ],
     colors=colors,
     x=x,
     bar_width=bar_width,
-    message_sizes=message_sizes
+    message_sizes=message_sizes,
 )
 
 # ── Bottom subplot: Rank-0 'Receiver' ────────────────────────────────────────
 draw_stacked_bar(
     ax=ax2,
     title="Rank-1  'Receiver'",
-    layers=[receiver_rx_ok_27, receiver_rx_ok_35, receiver_rx_ok_36_to_63, receiver_rx_ok_64, receiver_rx_ok_512_to_1023, receiver_rx_ok_1024_to_2047, receiver_rx_ok_2048_to_4095],
-    layer_labels=['hni_rx_ok_27', 'hni_rx_ok_35', 'hni_rx_ok_36_to_63', 'hni_rx_ok_64', 'hni_rx_ok_512_to_1023', 'hni_rx_ok_1024_to_2047', 'hni_rx_ok_2048_to_4095'],
+    layers=[
+        receiver_rx_ok_27,
+        receiver_rx_ok_35,
+        receiver_rx_ok_36_to_63,
+        receiver_rx_ok_64,
+        receiver_rx_ok_512_to_1023,
+        receiver_rx_ok_1024_to_2047,
+        receiver_rx_ok_2048_to_4095,
+    ],
+    layer_labels=[
+        "hni_rx_ok_27",
+        "hni_rx_ok_35",
+        "hni_rx_ok_36_to_63",
+        "hni_rx_ok_64",
+        "hni_rx_ok_512_to_1023",
+        "hni_rx_ok_1024_to_2047",
+        "hni_rx_ok_2048_to_4095",
+    ],
     colors=colors,
     x=x,
     bar_width=bar_width,
-    message_sizes=message_sizes
+    message_sizes=message_sizes,
 )
 
 plt.tight_layout()
-plt.savefig('plot_ack.png', dpi=150)
+plt.savefig("plot_ack.png", dpi=150)

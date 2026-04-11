@@ -1,18 +1,31 @@
-import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
 import argparse
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from matplotlib.lines import Line2D
+
 # Set up argument parser
-parser = argparse.ArgumentParser(description='Generate violin plot of relative errors from CSV files')
-parser.add_argument('input_path', type=str, 
-                    help='Path to a CSV data file or folder containing CSV files')
-parser.add_argument('--format', type=str, default='png', 
-                    choices=['png', 'pdf', 'svg', 'jpg'],
-                    help='Output image format (default: png)')
-parser.add_argument('--output-name', type=str, default='relative_error_violin_plot',
-                    help='Output filename (default: relative_error_violin_plot)')
+parser = argparse.ArgumentParser(
+    description="Generate violin plot of relative errors from CSV files"
+)
+parser.add_argument(
+    "input_path", type=str, help="Path to a CSV data file or folder containing CSV files"
+)
+parser.add_argument(
+    "--format",
+    type=str,
+    default="png",
+    choices=["png", "pdf", "svg", "jpg"],
+    help="Output image format (default: png)",
+)
+parser.add_argument(
+    "--output-name",
+    type=str,
+    default="relative_error_violin_plot",
+    help="Output filename (default: relative_error_violin_plot)",
+)
 args = parser.parse_args()
 
 # Check if input is a file or directory
@@ -21,15 +34,15 @@ input_path = Path(args.input_path)
 csv_files = []
 if input_path.is_file():
     # Process single file
-    if input_path.suffix.lower() == '.csv':
+    if input_path.suffix.lower() == ".csv":
         csv_files = [input_path]
     else:
         print(f"Error: {input_path} is not a CSV file")
         exit(1)
 elif input_path.is_dir():
     # Process all CSV files in directory
-    csv_files = sorted(list(input_path.glob('*.csv')))
-    
+    csv_files = sorted(list(input_path.glob("*.csv")))
+
     if not csv_files:
         print(f"No CSV files found in directory: {input_path}")
         exit(1)
@@ -40,18 +53,18 @@ else:
 print(f"Found {len(csv_files)} CSV file(s)")
 
 # Collect relative errors for each SMOCC variant
-smocc_variants = ['smocc_lower', 'smocc_mid', 'smocc_upper', 'mock_smocc']
+smocc_variants = ["smocc_lower", "smocc_mid", "smocc_upper", "mock_smocc"]
 relative_errors = {variant: [] for variant in smocc_variants}
 
 # Process each CSV file
 for csv_file in csv_files:
     print(f"Processing: {csv_file.name}")
     try:
-        df = pd.read_csv(csv_file, comment='#')
-        
+        df = pd.read_csv(csv_file, comment="#")
+
         for _, row in df.iterrows():
-            measured = row['measured']
-            
+            measured = row["measured"]
+
             # Calculate relative error for each variant: (predicted - measured) / measured * 100
             for variant in smocc_variants:
                 if variant in row:
@@ -69,47 +82,46 @@ if all(len(errors) == 0 for errors in relative_errors.values()):
 
 # Prepare data for violin plot
 data = [relative_errors[variant] for variant in smocc_variants]
-labels = ['SMOCC Lower', 'SMOCC Mid', 'SMOCC Upper', 'Mock SMOCC']
+labels = ["SMOCC Lower", "SMOCC Mid", "SMOCC Upper", "Mock SMOCC"]
 
 # Create violin plot
 fig, ax = plt.subplots(figsize=(12, 8))
 
-parts = ax.violinplot(data, positions=range(len(labels)), showmeans=True, showmedians=True, widths=0.7)
+parts = ax.violinplot(
+    data, positions=range(len(labels)), showmeans=True, showmedians=True, widths=0.7
+)
 
 # Color the violins with different colors
-colors = ['#3498db', '#2ecc71', '#f39c12', '#e74c3c']
-for i, pc in enumerate(parts['bodies']):
+colors = ["#3498db", "#2ecc71", "#f39c12", "#e74c3c"]
+for i, pc in enumerate(parts["bodies"]):
     pc.set_facecolor(colors[i])
     pc.set_alpha(0.7)
 
 # Customize mean and median lines
-parts['cmedians'].set_color('black')
-parts['cmedians'].set_linewidth(2)
-parts['cmeans'].set_color('red')
-parts['cmeans'].set_linewidth(2)
+parts["cmedians"].set_color("black")
+parts["cmedians"].set_linewidth(2)
+parts["cmeans"].set_color("red")
+parts["cmeans"].set_linewidth(2)
 
 # Add a horizontal line at y=0 (perfect prediction)
-ax.axhline(y=0, color='black', linestyle='--', linewidth=1.5, alpha=0.7, label='Perfect Prediction')
+ax.axhline(y=0, color="black", linestyle="--", linewidth=1.5, alpha=0.7, label="Perfect Prediction")
 
 # Customize the plot
 ax.set_xticks(range(len(labels)))
-ax.set_xticklabels(labels, fontsize=14, fontweight='bold')
-ax.set_ylabel('Relative Error (%)', fontsize=16, fontweight='bold')
-ax.set_title('Relative Error Distribution Across SMOCC Variants', 
-             fontsize=18, fontweight='bold')
-ax.grid(axis='y', alpha=0.3, linestyle='--')
+ax.set_xticklabels(labels, fontsize=14, fontweight="bold")
+ax.set_ylabel("Relative Error (%)", fontsize=16, fontweight="bold")
+ax.set_title("Relative Error Distribution Across SMOCC Variants", fontsize=18, fontweight="bold")
+ax.grid(axis="y", alpha=0.3, linestyle="--")
 
 # Set y-axis range
 ax.set_ylim(-60, 70)
 
-# Add legend
-from matplotlib.lines import Line2D
 legend_elements = [
-    Line2D([0], [0], color='black', linewidth=2, label='Median'),
-    Line2D([0], [0], color='red', linewidth=2, label='Mean'),
-    Line2D([0], [0], color='black', linestyle='--', linewidth=1.5, label='Perfect Estimation')
+    Line2D([0], [0], color="black", linewidth=2, label="Median"),
+    Line2D([0], [0], color="red", linewidth=2, label="Mean"),
+    Line2D([0], [0], color="black", linestyle="--", linewidth=1.5, label="Perfect Estimation"),
 ]
-ax.legend(handles=legend_elements, loc='upper right', fontsize=12)
+ax.legend(handles=legend_elements, loc="upper right", fontsize=12)
 
 # Add statistics text
 stats_text = []
@@ -117,19 +129,20 @@ for i, variant in enumerate(smocc_variants):
     if len(relative_errors[variant]) > 0:
         mean_err = np.mean(relative_errors[variant])
         median_err = np.median(relative_errors[variant])
-        stats_text.append(f'{labels[i]}: Mean={mean_err:.1f}%, Median={median_err:.1f}%')
+        stats_text.append(f"{labels[i]}: Mean={mean_err:.1f}%, Median={median_err:.1f}%")
     else:
-        stats_text.append(f'{labels[i]}: No data')
+        stats_text.append(f"{labels[i]}: No data")
 
 # Add text box with statistics
-textstr = '\n'.join(stats_text)
-props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=10,
-        verticalalignment='top', bbox=props)
+textstr = "\n".join(stats_text)
+props = dict(boxstyle="round", facecolor="wheat", alpha=0.5)
+ax.text(
+    0.02, 0.98, textstr, transform=ax.transAxes, fontsize=10, verticalalignment="top", bbox=props
+)
 
 plt.tight_layout()
 
 # Generate output filename
 output_file = f"{args.output_name}.{args.format}"
-plt.savefig(output_file, dpi=300, bbox_inches='tight')
+plt.savefig(output_file, dpi=300, bbox_inches="tight")
 print(f"\nViolin plot saved to: {output_file}")
