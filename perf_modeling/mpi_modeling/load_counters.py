@@ -5,18 +5,17 @@ Loads Cassini hardware counter data from the two-level directory
 structure produced by sbatch scripts we used on Perlmutter.
 """
 
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
-from typing import Tuple, List, Dict
-
-from constants import NUM_ALL_CNTRS, TX_HIST_SLICE, RX_HIST_SLICE, ALL_CNTRS
+from constants import ALL_CNTRS, NUM_ALL_CNTRS, RX_HIST_SLICE, TX_HIST_SLICE
 
 
 # =============================================================
 # Top-level loader — single run
 # =============================================================
-def load_counters_single_job(counter_dir: str | Path) -> Tuple[np.ndarray, List[str]]:
+def load_counters_single_job(counter_dir: str | Path) -> tuple[np.ndarray, list[str]]:
     """
     Load all hardware counters from the three-level results directory.
 
@@ -39,10 +38,9 @@ def load_counters_single_job(counter_dir: str | Path) -> Tuple[np.ndarray, List[
     print(f"Loading counters from: {counter_dir}")
 
     # find and sort all subdirs inside counter_dir that contain a cxi0/counters.csv file.
-    node_dirs = sorted([
-        d for d in counter_dir.iterdir()
-        if d.is_dir() and (d / "cxi0" / "counters.csv").exists()
-    ])
+    node_dirs = sorted(
+        [d for d in counter_dir.iterdir() if d.is_dir() and (d / "cxi0" / "counters.csv").exists()]
+    )
 
     if len(node_dirs) == 0:
         raise FileNotFoundError(
@@ -54,21 +52,23 @@ def load_counters_single_job(counter_dir: str | Path) -> Tuple[np.ndarray, List[
     num_nodes = len(node_dirs)
 
     # create Y vector with shape (num_nodes, 2 * NUM_ALL_CNTRS)
-    Y = np.zeros((num_nodes, 2 * NUM_ALL_CNTRS), dtype=np.float64)
+    vector_y = np.zeros((num_nodes, 2 * NUM_ALL_CNTRS), dtype=np.float64)
     # create list of node names in the same order as Y
-    node_names: List[str] = []
+    node_names: list[str] = []
 
     for node_idx, node_dir in enumerate(node_dirs):
         node_names.append(node_dir.name)
-        Y[node_idx, :] = load_node_counters(node_dir / "cxi0" / "counters.csv")
-        print(f"  Loaded [{node_idx+1}/{num_nodes}] {node_dir.name}")
+        vector_y[node_idx, :] = load_node_counters(node_dir / "cxi0" / "counters.csv")
+        print(f"  Loaded [{node_idx + 1}/{num_nodes}] {node_dir.name}")
 
     # check loaded data for common issues before returning
-    _validate(Y, node_names)
+    _validate(vector_y, node_names)
 
-    print(f"\nDone. Y shape: {Y.shape}  (N={num_nodes} nodes, each has {2 * NUM_ALL_CNTRS} counters)")
+    print(
+        f"\nDone. Y shape: {vector_y.shape}  (N={num_nodes} nodes, each has {2 * NUM_ALL_CNTRS} counters)"
+    )
 
-    return Y, node_names
+    return vector_y, node_names
 
 
 # =============================================================
@@ -78,7 +78,7 @@ def load_node_counters(counter_file: Path) -> np.ndarray:
     """
     Load counters.csv for a single node.
 
-    counters.csv is the delta (after - before). 
+    counters.csv is the delta (after - before).
     It has three columns:
         counter_name, direction, value
 
@@ -96,17 +96,13 @@ def load_node_counters(counter_file: Path) -> np.ndarray:
             f"  Found    : {set(df.columns)}"
         )
 
-    counter_lookup: Dict[str, float] = dict(zip(df["counter_name"], df["value"]))
+    counter_lookup: dict[str, float] = dict(zip(df["counter_name"], df["value"], strict=True))
 
     # check that all expected counters are present
-    missing = [
-        name for name in ALL_CNTRS
-        if name not in counter_lookup
-    ]
+    missing = [name for name in ALL_CNTRS if name not in counter_lookup]
     if missing:
         raise KeyError(
-            f"{counter_file}: missing counters:\n" +
-            "\n".join(f"  - {m}" for m in missing)
+            f"{counter_file}: missing counters:\n" + "\n".join(f"  - {m}" for m in missing)
         )
 
     # create y_node vector in the order of ALL_CNTRS, with TX counters followed by RX counters
@@ -121,29 +117,28 @@ def load_node_counters(counter_file: Path) -> np.ndarray:
 # =============================================================
 # Validation
 # =============================================================
-def _validate(Y: np.ndarray, node_names: List[str]) -> None:
+def _validate(vector_y: np.ndarray, node_names: list[str]) -> None:
     """Check loaded counter data for common issues."""
-    num_nodes = Y.shape[0]
+    num_nodes = vector_y.shape[0]
     print("\n  Validating...")
 
     # make sure all counters are non-negative
-    if np.any(Y < 0):
+    if np.any(vector_y < 0):
         raise ValueError("Negative counter values detected.")
     print("    [OK] All counters non-negative")
 
     # make sure no node has all-zero counters (indicating missing data)
     for node_idx in range(num_nodes):
-        if np.all(Y[node_idx, :] == 0):
-            print(f"    [WARN] {node_names[node_idx]}: "
-                  f"all counters zero — possible missing data")
+        if np.all(vector_y[node_idx, :] == 0):
+            print(f"    [WARN] {node_names[node_idx]}: all counters zero — possible missing data")
 
     # Collect all packet counts from histogram counters
-    total_tx = np.sum(Y[:, TX_HIST_SLICE])
-    total_rx = np.sum(Y[:, RX_HIST_SLICE])
-    
+    total_tx = np.sum(vector_y[:, TX_HIST_SLICE])
+    total_rx = np.sum(vector_y[:, RX_HIST_SLICE])
+
     # Check that TX and RX totals are within a reasonable ratio.
     if total_tx > 0 and total_rx > 0:
-        ratio  = total_tx / total_rx
+        ratio = total_tx / total_rx
         status = "[OK]" if 0.5 <= ratio <= 2.0 else "[WARN]"
         print(f"    {status} TX/RX packet ratio = {ratio:.2f}")
 

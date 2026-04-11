@@ -15,7 +15,6 @@ Sections:
 """
 
 import numpy as np
-from typing import List, Tuple
 
 # =============================================================
 # Counter name lists
@@ -24,7 +23,11 @@ from typing import List, Tuple
 # TC counters        : traffic class packet counts
 # =============================================================
 
-TX_HIST_CNTRS: List[str] = [
+# Ruff won't format this code
+# fmt: off
+
+
+TX_HIST_CNTRS: list[str] = [
     "hni_tx_ok_64",
     "hni_tx_ok_65_to_127",
     "hni_tx_ok_128_to_255",
@@ -35,12 +38,9 @@ TX_HIST_CNTRS: List[str] = [
     "hni_tx_ok_4096_to_8191",
 ]
 
-TX_TC_CNTRS: List[str] = [
-    "hni_pkts_sent_by_tc_0",
-    "hni_pkts_sent_by_tc_1"
-]
+TX_TC_CNTRS: list[str] = ["hni_pkts_sent_by_tc_0", "hni_pkts_sent_by_tc_1"]
 
-RX_HIST_CNTRS: List[str] = [
+RX_HIST_CNTRS: list[str] = [
     "hni_rx_ok_64",
     "hni_rx_ok_65_to_127",
     "hni_rx_ok_128_to_255",
@@ -51,18 +51,11 @@ RX_HIST_CNTRS: List[str] = [
     "hni_rx_ok_4096_to_8191",
 ]
 
-RX_TC_CNTRS: List[str] = [
-    "hni_pkts_recv_by_tc_0",
-    "hni_pkts_recv_by_tc_1"
-]
+RX_TC_CNTRS: list[str] = ["hni_pkts_recv_by_tc_0", "hni_pkts_recv_by_tc_1"]
 
 # Validate symmetry before deriving anything
-assert len(TX_HIST_CNTRS) == len(RX_HIST_CNTRS), (
-    "TX and RX histogram counter lists must have the same length"
-)
-assert len(TX_TC_CNTRS) == len(RX_TC_CNTRS), (
-    "TX and RX TC counter lists must have the same length"
-)
+assert len(TX_HIST_CNTRS) == len(RX_HIST_CNTRS), "TX and RX histogram counter lists must have the same length"
+assert len(TX_TC_CNTRS) == len(RX_TC_CNTRS), "TX and RX TC counter lists must have the same length"
 
 # =============================================================
 # Derived counter layout
@@ -71,12 +64,12 @@ assert len(TX_TC_CNTRS) == len(RX_TC_CNTRS), (
 # =============================================================
 
 # Aggregated per-direction lists
-TX_CNTRS: List[str] = TX_HIST_CNTRS + TX_TC_CNTRS
-RX_CNTRS: List[str] = RX_HIST_CNTRS + RX_TC_CNTRS
+TX_CNTRS: list[str] = TX_HIST_CNTRS + TX_TC_CNTRS
+RX_CNTRS: list[str] = RX_HIST_CNTRS + RX_TC_CNTRS
 
 # Full ordered counter vector:
 #   y = [TX_HIST | TX_TC | RX_HIST | RX_TC]
-ALL_CNTRS: List[str] = TX_CNTRS + RX_CNTRS
+ALL_CNTRS: list[str] = TX_CNTRS + RX_CNTRS
 
 # Dimensions
 NUM_HIST_CNTRS: int = len(TX_HIST_CNTRS)
@@ -132,7 +125,7 @@ MSG_SIZES_COARSE: np.ndarray = np.array([
     1024 * 1024, 2048 * 1024, 4096 * 1024, 8192 * 1024
 ], dtype=np.float64)
 
-# dict of msg size sets 
+# dict of msg size sets
 MSG_SIZE_SETS: dict = {
     "permultter" : MSG_SIZES_PM,
     "fine" : MSG_SIZES_FINE,
@@ -142,9 +135,9 @@ MSG_SIZE_SETS: dict = {
 # =============================================================
 # Network parameters
 # =============================================================
-MTU: int = 2048   # max packet size including header (bytes)
-#HEADER_SIZE: int = 64     # Cassini packet header size (bytes)
-#PAYLOAD_MAX: int = MTU - HEADER_SIZE
+MTU: int = 2048  # max packet size including header (bytes)
+# HEADER_SIZE: int = 64     # Cassini packet header size (bytes)
+# PAYLOAD_MAX: int = MTU - HEADER_SIZE
 
 # =============================================================
 # Protocol threshold
@@ -156,25 +149,25 @@ MTU: int = 2048   # max packet size including header (bytes)
 #   eager      : tc_DATA is the request class (TX), tc_ACK is the response class (RX)
 #   rendezvous : tc0 = response (RX),  tc1 = request (TX) <-- swapped
 # =============================================================
-RDZV_THRESHOLD: int = 16384   # bytes
+RDZV_THRESHOLD: int = 16384  # bytes
 
 # =============================================================
 # Traffic class config
 # =============================================================
-TC_DATA: int = 0   # request packets routed to TC0
+TC_DATA: int = 0  # request packets routed to TC0
 TC_ACK: int = 1  # response packets routed to TC1
 
 # =============================================================
 # Empirically confirmed sub-MTU fragmentation map
 # Each tuple is (upper msg_size, [histogram data bucket indices])
 # =============================================================
-SUB_MTU_MAP: List[Tuple[int, List[int]]] = [
-    (11,   [0]),
-    (74,   [1]),
-    (192,  [2]),
-    (202,  [0, 2]),
-    (458,  [0, 3]),
-    (970,  [0, 4]),
+SUB_MTU_MAP: list[tuple[int, list[int]]] = [
+    (11, [0]),
+    (74, [1]),
+    (192, [2]),
+    (202, [0, 2]),
+    (458, [0, 3]),
+    (970, [0, 4]),
     (1994, [0, 5]),
     (2048, [0, 6]),
 ]

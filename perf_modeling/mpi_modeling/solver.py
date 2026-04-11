@@ -5,19 +5,20 @@ Solves the MPI communication model for all nodes.
 
 All constants imported from constants.py.
 """
-import numpy as np
-from typing import Tuple, List, Optional
+
 import warnings
+
 import cvxpy as cp
+import numpy as np
 from scipy.optimize import nnls
 
 
 # =============================================================
 # Global solver — single run
 # =============================================================
-def solve_global(A: np.ndarray,
-                 Y: np.ndarray,
-                 node_names: Optional[List[str]] = None) -> Tuple[np.ndarray, List[float]]:
+def solve_global(
+    matrix_a: np.ndarray, vec_y: np.ndarray, node_names: list[str] | None = None
+) -> tuple[np.ndarray, list[float]]:
     """
     Solve global constrained optimization for all nodes (single run).
 
@@ -29,40 +30,42 @@ def solve_global(A: np.ndarray,
     X            : np.ndarray, shape (num_nodes, 2*num_msg_size_bins)
     lambda_used_list : list of float, length num_nodes
     """
-    num_nodes, all_counters_txrx = Y.shape
+    num_nodes, all_counters_txrx = vec_y.shape
 
-    if all_counters_txrx != A.shape[0]:
-        raise ValueError(f"Y has {all_counters_txrx} counters per node but A has {A.shape[0]} rows.")
+    if all_counters_txrx != matrix_a.shape[0]:
+        raise ValueError(
+            f"Y has {all_counters_txrx} counters per node but A has {matrix_a.shape[0]} rows."
+        )
 
     if node_names is None:
         node_names = [f"node_{n}" for n in range(num_nodes)]
 
-    print(f"  A : {A.shape}   Y : {Y.shape}   X : ({num_nodes}, {A.shape[1]})\n")
+    print(f"  A : {matrix_a.shape}   Y : {vec_y.shape}   X : ({num_nodes}, {matrix_a.shape[1]})\n")
 
-    X = np.zeros((num_nodes, A.shape[1]))
+    vec_x = np.zeros((num_nodes, matrix_a.shape[1]))
     lambda_used_list = []
 
     for node_idx in range(num_nodes):
-        print(f"--- Node [{node_idx+1}/{num_nodes}]: {node_names[node_idx]} ---")
+        print(f"--- Node [{node_idx + 1}/{num_nodes}]: {node_names[node_idx]} ---")
 
-        y_nid = Y[node_idx, :]
-        print(f"  Auto-tuning lambda (residual tolerance):")
-        lam = find_lambda_cv(A, y_nid, max_extensions=5)
-        x_nid = solve_constrained_optimization(A, y_nid, lam)
-        X[node_idx, :] = x_nid
+        y_nid = vec_y[node_idx, :]
+        print("  Auto-tuning lambda (residual tolerance):")
+        lam = find_lambda_cv(matrix_a, y_nid, max_extensions=5)
+        x_nid = solve_constrained_optimization(matrix_a, y_nid, lam)
+        vec_x[node_idx, :] = x_nid
         lambda_used_list.append(lam)
 
         active_bins = int(np.sum(x_nid > 0.5))
-        residual = np.linalg.norm(A @ x_nid - y_nid)
+        residual = np.linalg.norm(matrix_a @ x_nid - y_nid)
         print(f"  lambda={lam:.3e}  active_bins={active_bins}  residual={residual:.2f}\n")
 
-    return X, lambda_used_list
+    return vec_x, lambda_used_list
 
 
 # =============================================================
 # Lambda selection via Leave-One-Counter-Out Cross Validation
 # =============================================================
-def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> float:
+def find_lambda_cv(matrix_a: np.ndarray, vec_y: np.ndarray, max_extensions: int = 5) -> float:
     """
     Automatic lambda selection via Leave-One-Counter-Out CV.
 
@@ -80,11 +83,11 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
     -------
     lambda_opt : float
     """
-    m            = len(y)
+    m = len(vec_y)
     lam_n_points = 50
     extend_factor = 10.0
 
-    lam_min, lam_balance = compute_lambda_baseline(A, y)
+    lam_min, lam_balance = compute_lambda_baseline(matrix_a, vec_y)
     lam_lo = lam_min
     lam_hi = lam_balance * 10.0
 
@@ -93,21 +96,19 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
 
     # Accumulate all (lambda, cv_error) pairs across extensions
     # so we can find the global best at the end
-    all_lambdas   = []
+    all_lambdas = []
     all_cv_errors = []
 
     found_interior = False
 
     for attempt in range(max_extensions + 1):
-        lambda_grid = np.logspace(
-            np.log10(lam_lo),
-            np.log10(lam_hi),
-            lam_n_points
-        )
+        lambda_grid = np.logspace(np.log10(lam_lo), np.log10(lam_hi), lam_n_points)
 
-        print(f"    Attempt {attempt + 1}: searching "
-              f"[{lambda_grid[0]:.3e}, {lambda_grid[-1]:.3e}] "
-              f"({lam_n_points} points, {m} LOCO folds each)")
+        print(
+            f"    Attempt {attempt + 1}: searching "
+            f"[{lambda_grid[0]:.3e}, {lambda_grid[-1]:.3e}] "
+            f"({lam_n_points} points, {m} LOCO folds each)"
+        )
 
         # Run LOCO-CV on this grid segment
         cv_errors = np.zeros(lam_n_points)
@@ -116,8 +117,8 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
             for k in range(m):
                 mask = np.ones(m, dtype=bool)
                 mask[k] = False
-                x_k = solve_constrained_optimization(A[mask, :], y[mask], lam)
-                fold_errors[k] = (A[k, :] @ x_k - y[k]) ** 2
+                x_k = solve_constrained_optimization(matrix_a[mask, :], vec_y[mask], lam)
+                fold_errors[k] = (matrix_a[k, :] @ x_k - vec_y[k]) ** 2
             cv_errors[i] = np.mean(fold_errors)
 
         # Accumulate results
@@ -125,8 +126,8 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
         all_cv_errors.extend(cv_errors.tolist())
 
         local_best_idx = int(np.argmin(cv_errors))
-        at_lower = (local_best_idx == 0)
-        at_upper = (local_best_idx == lam_n_points - 1)
+        at_lower = local_best_idx == 0
+        at_upper = local_best_idx == lam_n_points - 1
 
         if not at_lower and not at_upper:
             # Optimum is interior — no need to extend further
@@ -135,23 +136,28 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
 
         if attempt < max_extensions:
             if at_lower:
-                print(f"    Optimal at lower boundary ({lambda_grid[0]:.3e}). "
-                      f"Extending grid downward by factor {extend_factor}.")
+                print(
+                    f"    Optimal at lower boundary ({lambda_grid[0]:.3e}). "
+                    f"Extending grid downward by factor {extend_factor}."
+                )
                 # Shift the search window downward, no overlap with current window
                 lam_hi = lam_lo
                 lam_lo = lam_lo / extend_factor
             else:
-                print(f"    Optimal at upper boundary ({lambda_grid[-1]:.3e}). "
-                      f"Extending grid upward by factor {extend_factor}.")
+                print(
+                    f"    Optimal at upper boundary ({lambda_grid[-1]:.3e}). "
+                    f"Extending grid upward by factor {extend_factor}."
+                )
                 # Shift the search window upward, no overlap with current window
                 lam_lo = lam_hi
                 lam_hi = lam_hi * extend_factor
 
     if not found_interior:
         warnings.warn(
-        f"Grid extension limit ({max_extensions}) reached. "
+            f"Grid extension limit ({max_extensions}) reached. "
             f"lambda_opt may not be the true optimum. "
-            f"Consider increasing max_extensions or checking your data."
+            f"Consider increasing max_extensions or checking your data.",
+            stacklevel=2,
         )
 
     # Find global best across all accumulated searches
@@ -160,8 +166,7 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
     global_best_idx = int(np.argmin(all_cv_errors_arr))
     lambda_opt = float(all_lambdas_arr[global_best_idx])
 
-    print(f"    lambda_opt = {lambda_opt:.3e}  "
-          f"(found in attempt {attempt + 1})")
+    print(f"    lambda_opt = {lambda_opt:.3e}  (found in attempt {attempt + 1})")
     print(f"    CV error   = {all_cv_errors_arr[global_best_idx]:.4f}")
 
     return lambda_opt
@@ -170,7 +175,9 @@ def find_lambda_cv(A: np.ndarray, y: np.ndarray, max_extensions: int = 5) -> flo
 # =============================================================
 # Core constrained optimization solver
 # =============================================================
-def solve_constrained_optimization(A: np.ndarray, y: np.ndarray, lam: float) -> np.ndarray:
+def solve_constrained_optimization(
+    matrix_a: np.ndarray, vec_y: np.ndarray, lam: float
+) -> np.ndarray:
     """
     Solve sparse recovery using L1 + LS (two-stage):
 
@@ -185,45 +192,45 @@ def solve_constrained_optimization(A: np.ndarray, y: np.ndarray, lam: float) -> 
         y: Observation vector (shape: m,)
         lam: Regularization parameter
     """
-    n = A.shape[1]
+    n = matrix_a.shape[1]
     solver_list = ["CLARABEL", "SCS", "ECOS", "OSQP", "CVXOPT"]
 
     # -------------------------
     # Stage 1: Plain L1
     # -------------------------
-    x = cp.Variable(n, nonneg=True)
-    objective = cp.Minimize(cp.sum(x) + lam * cp.sum_squares(A @ x - y))
+    vec_x = cp.Variable(n, nonneg=True)
+    objective = cp.Minimize(cp.sum(vec_x) + lam * cp.sum_squares(matrix_a @ vec_x - vec_y))
     prob = cp.Problem(objective)
 
     for solver in solver_list:
         try:
             prob.solve(solver=solver, verbose=False)
-            if x.value is not None and prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
+            if vec_x.value is not None and prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
                 break
-            warnings.warn(f"Solver {solver} failed. Trying next solver.")
+            warnings.warn(f"Solver {solver} failed. Trying next solver.", stacklevel=2)
         except cp.SolverError:
-            warnings.warn(f"Solver {solver} failed. Trying next solver.")
+            warnings.warn(f"Solver {solver} failed. Trying next solver.", stacklevel=2)
 
-    if x.value is None:
-        warnings.warn("All solvers failed. Returning zeros.")
+    if vec_x.value is None:
+        warnings.warn("All solvers failed. Returning zeros.", stacklevel=2)
         return np.zeros(n)
 
     # -------------------------
     # Stage 2: NNLS on support
     # -------------------------
-    #support_threshold: Variables below this after Stage 1 are treated as zero
+    # support_threshold: Variables below this after Stage 1 are treated as zero
     support_threshold = 0.01
 
-    active_mask = x.value > support_threshold
+    active_mask = vec_x.value > support_threshold
 
     if not np.any(active_mask):
         warnings.warn(
-            "No active variables found after L1. "
-            "Consider lowering support_threshold or adjusting lambda."
+            "No active variables found after L1. Consider lowering support_threshold or adjusting lambda.",
+            stacklevel=2,
         )
-        return x.value
+        return vec_x.value
 
-    x_active, _ = nnls(A[:, active_mask], y)
+    x_active, _ = nnls(matrix_a[:, active_mask], vec_y)
     x_refined = np.zeros(n)
     x_refined[active_mask] = x_active
 
@@ -233,7 +240,7 @@ def solve_constrained_optimization(A: np.ndarray, y: np.ndarray, lam: float) -> 
 # =============================================================
 # Mathematically grounded starting point
 # =============================================================
-def compute_lambda_baseline(A: np.ndarray, y: np.ndarray) -> float:
+def compute_lambda_baseline(matrix_a: np.ndarray, vec_y: np.ndarray) -> float:
     """
     Compute principled lambda search bounds using KKT theory and NNLS.
 
@@ -249,26 +256,26 @@ def compute_lambda_baseline(A: np.ndarray, y: np.ndarray) -> float:
     lam_min     : float
     lam_balance : float
     """
-    # A.T @ y is essentially asking: 
+    # A.T @ y is essentially asking:
     # "which features are most correlated with what I'm trying to predict?"
-    aty = A.T @ y
+    aty = matrix_a.T @ vec_y
     max_aty = np.max(aty[aty > 0]) if np.any(aty > 0) else 0.0
-    
+
     if max_aty == 0:
-        warnings.warn("A^T y has no positive entries — y may be all zeros.")
+        warnings.warn("A^T y has no positive entries — y may be all zeros.", stacklevel=2)
         lam_min = 1e-6
     else:
         lam_min = 1.0 / (2.0 * max_aty)
-    
+
     # NNLS gives the best-fit x >= 0, used to calibrate the upper grid bound
-    x_nnls, res_norm = nnls(A, y)   # res_norm = ||Ax_nnls - y||_2
-    res_sq   = res_norm ** 2
-    l1_nnls  = np.sum(x_nnls)
+    x_nnls, res_norm = nnls(matrix_a, vec_y)  # res_norm = ||Ax_nnls - y||_2
+    res_sq = res_norm**2
+    l1_nnls = np.sum(x_nnls)
 
     if res_sq > 0 and l1_nnls > 0:
         lam_balance = l1_nnls / res_sq
     else:
-        warnings.warn("NNLS solution is degenerate. Falling back to lam_min * 1e4.")
+        warnings.warn("NNLS solution is degenerate. Falling back to lam_min * 1e4.", stacklevel=2)
         lam_balance = lam_min * 1e4
 
     return lam_min, lam_balance
@@ -277,24 +284,25 @@ def compute_lambda_baseline(A: np.ndarray, y: np.ndarray) -> float:
 # =============================================================
 # Utility function to print solution summary
 # =============================================================
-def print_solution_summary(node_names: List[str],
-                           lambda_used: List[float],
-                           X: np.ndarray,
-                           msg_size_sets: List[int]) -> None:
+def print_solution_summary(
+    node_names: list[str], lambda_used: list[float], vec_x: np.ndarray, msg_size_sets: list[int]
+) -> None:
     """Print per-node lambda selection and solution summary."""
-    if X.shape[1] % 2 != 0:
-        raise ValueError(f"X has {X.shape[1]} columns — expected an even number.")
+    if vec_x.shape[1] % 2 != 0:
+        raise ValueError(f"X has {vec_x.shape[1]} columns — expected an even number.")
 
-    num_msg_sizes = X.shape[1] // 2
+    num_msg_sizes = vec_x.shape[1] // 2
 
     print("\n=== Residual Tolerance Summary ===")
-    print(f"  {'Node':<20} {'lambda':>12} {'active_bins':>12} {'total_sends':>12} {'total_recvs':>12}")
+    print(
+        f"  {'Node':<20} {'lambda':>12} {'active_bins':>12} {'total_sends':>12} {'total_recvs':>12}"
+    )
     print("  " + "-" * 70)
 
-    for node_idx, (name, lambda_val) in enumerate(zip(node_names, lambda_used)):
-        x_send = X[node_idx, :num_msg_sizes]
-        x_recv = X[node_idx, num_msg_sizes:]
-        active   = int(np.sum(X[node_idx, :] > 0.5))
+    for node_idx, (name, lambda_val) in enumerate(zip(node_names, lambda_used, strict=True)):
+        x_send = vec_x[node_idx, :num_msg_sizes]
+        x_recv = vec_x[node_idx, num_msg_sizes:]
+        active = int(np.sum(vec_x[node_idx, :] > 0.5))
         tot_send = int(np.sum(x_send))
         tot_recv = int(np.sum(x_recv))
 
@@ -313,8 +321,8 @@ def print_solution_summary(node_names: List[str],
 
             pad = max(len(s) for s in send_pairs) + 2 if send_pairs else 0
 
-            print(f"    bins :")
-            for s, r in zip(send_pairs, recv_pairs):
+            print("    bins :")
+            for s, r in zip(send_pairs, recv_pairs, strict=True):
                 print(f"        send: {s:<{pad}} recv: {r}")
         else:
-            print(f"    bins : (none)")
+            print("    bins : (none)")
