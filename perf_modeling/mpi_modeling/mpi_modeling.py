@@ -79,12 +79,8 @@ def main():
     print("=" * 60)
 
     # X's shape is (num_nodes, 2 * num_msg_size_bins)
-    vector_x, lambdas_used = solve_global(matrix_a, y_for_solver, node_names)
-    print_solution_summary(node_names, lambdas_used, vector_x, msg_size_sets)
-
-    n_msg_sizes = len(msg_size_sets)
-    x_send = vector_x[:, :n_msg_sizes]
-    x_recv = vector_x[:, n_msg_sizes:]
+    vec_x, lambdas_used = solve_global(matrix_a, y_for_solver, node_names)
+    print_solution_summary(node_names, lambdas_used, vec_x, msg_size_sets)
 
     # ----------------------------------------------------------
     # Step 4 — Estimate Communication Time Upper Bound
@@ -106,6 +102,10 @@ def main():
     else:
         print("Using piecewise Hockney model fit...")
         latency_model = fit_latency_model(args.osu_latency_file, rdzv_threshold=RDZV_THRESHOLD)
+
+    n_msg_sizes = len(msg_size_sets)
+    x_send = vec_x[:, :n_msg_sizes]
+    x_recv = vec_x[:, n_msg_sizes:]
 
     # current only consider latency and placeholder for gap model
     gap_model = None

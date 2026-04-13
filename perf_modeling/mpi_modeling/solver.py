@@ -20,15 +20,16 @@ def solve_global(
     matrix_a: np.ndarray, vec_y: np.ndarray, node_names: list[str] | None = None
 ) -> tuple[np.ndarray, list[float]]:
     """
-    Solve global constrained optimization for all nodes (single run).
+    Solve the sparse recovery problem independently for every node in a single pass.
 
-        min_{x >= 0}  ||x||_1
-        s.t.          ||Ax - y||_2^2 <= epsilon
+    For each node, the system matrix is rescaled using Poisson variance weights
+    derived from that node's observation vector, and then the optimal regularization
+    parameter lambda is selected via cross-validation before solving:
 
-    Returns
-    -------
-    X            : np.ndarray, shape (num_nodes, 2*num_msg_size_bins)
-    lambda_used_list : list of float, length num_nodes
+        min_{x >= 0}  w^T x + lambda * ||A_scaled x - y_scaled||_2^2
+
+    where w are packet weights (column sums of the original A) and the scaled
+    versions of A and y account for Poisson noise in each row.
     """
     num_nodes, all_counters_txrx = vec_y.shape
 
@@ -45,17 +46,29 @@ def solve_global(
     vec_x = np.zeros((num_nodes, matrix_a.shape[1]))
     lambda_used_list = []
 
+    # 1. Compute baseline packet weights using the ORIGINAL, unscaled matrix
+    packet_weights = np.sum(matrix_a, axis=0)
+
     for node_idx in range(num_nodes):
         print(f"--- Node [{node_idx + 1}/{num_nodes}]: {node_names[node_idx]} ---")
-
         y_nid = vec_y[node_idx, :]
+
+        # 2. Compute Poisson variance weights for this node
+        # We add 1.0 to avoid division by zero on empty counters
+        row_scales = 1.0 / np.sqrt(np.maximum(y_nid, 1.0))
+
+        # 3. Scale the matrix and target vector
+        matrix_a_scaled = matrix_a * row_scales[:, np.newaxis]
+        y_scaled = y_nid * row_scales
+
         print("  Auto-tuning lambda (residual tolerance):")
-        lam = find_lambda_cv(matrix_a, y_nid, max_extensions=5)
-        x_nid = solve_constrained_optimization(matrix_a, y_nid, lam)
+        lam = find_lambda_cv(matrix_a_scaled, y_scaled, packet_weights, max_extensions=5)
+        x_nid = solve_constrained_optimization(matrix_a_scaled, y_scaled, packet_weights, lam)
         vec_x[node_idx, :] = x_nid
         lambda_used_list.append(lam)
 
         active_bins = int(np.sum(x_nid > 0.5))
+        # Print original unscaled residual for user visibility
         residual = np.linalg.norm(matrix_a @ x_nid - y_nid)
         print(f"  lambda={lam:.3e}  active_bins={active_bins}  residual={residual:.2f}\n")
 
@@ -65,63 +78,47 @@ def solve_global(
 # =============================================================
 # Lambda selection via Leave-One-Counter-Out Cross Validation
 # =============================================================
-def find_lambda_cv(matrix_a: np.ndarray, vec_y: np.ndarray, max_extensions: int = 5) -> float:
+def find_lambda_cv(
+    matrix_a: np.ndarray, vec_y: np.ndarray, packet_weights: np.ndarray, max_extensions: int = 5
+) -> float:
     """
-    Automatic lambda selection via Leave-One-Counter-Out CV.
+    Select the regularization parameter lambda via Leave-One-Counter-Out cross-validation.
 
-    If the optimal lambda lands on a grid boundary, the grid is automatically
-    extended in that direction and CV is re-run on the new region only.
-    Results are accumulated across all extensions and the global best is returned.
+    A logarithmic grid of lambda candidates is evaluated; for each candidate, every
+    counter is held out in turn and the squared prediction error on that counter is
+    recorded. The lambda that minimises the mean CV error is returned.
 
-    Parameters
-    ----------
-    A : System matrix (shape: m x n)
-    y : Observation vector (shape: m,)
-    max_extensions : Maximum number of grid extensions before giving up (default: 5)
-
-    Returns
-    -------
-    lambda_opt : float
+    If the best lambda falls on a grid boundary, the grid is automatically shifted
+    in that direction by `extend_factor` and CV is re-run over the new region.
+    Results are accumulated across all extensions and the global minimum is returned.
     """
     m = len(vec_y)
     lam_n_points = 50
     extend_factor = 10.0
 
-    lam_min, lam_balance = compute_lambda_baseline(matrix_a, vec_y)
-    lam_lo = lam_min
-    lam_hi = lam_balance * 10.0
+    lam_min, lam_balance = compute_lambda_baseline(matrix_a, vec_y, packet_weights)
+    lam_lo, lam_hi = lam_min, lam_balance * 10.0
 
     print(f"    lam_min (KKT transition) = {lam_min:.3e}")
     print(f"    lam_balance (NNLS)       = {lam_balance:.3e}")
 
-    # Accumulate all (lambda, cv_error) pairs across extensions
-    # so we can find the global best at the end
-    all_lambdas = []
-    all_cv_errors = []
-
-    found_interior = False
+    all_lambdas, all_cv_errors = [], []
 
     for attempt in range(max_extensions + 1):
         lambda_grid = np.logspace(np.log10(lam_lo), np.log10(lam_hi), lam_n_points)
 
-        print(
-            f"    Attempt {attempt + 1}: searching "
-            f"[{lambda_grid[0]:.3e}, {lambda_grid[-1]:.3e}] "
-            f"({lam_n_points} points, {m} LOCO folds each)"
-        )
-
-        # Run LOCO-CV on this grid segment
         cv_errors = np.zeros(lam_n_points)
         for i, lam in enumerate(lambda_grid):
             fold_errors = np.zeros(m)
             for k in range(m):
                 mask = np.ones(m, dtype=bool)
                 mask[k] = False
-                x_k = solve_constrained_optimization(matrix_a[mask, :], vec_y[mask], lam)
+                x_k = solve_constrained_optimization(
+                    matrix_a[mask, :], vec_y[mask], packet_weights, lam
+                )
                 fold_errors[k] = (matrix_a[k, :] @ x_k - vec_y[k]) ** 2
             cv_errors[i] = np.mean(fold_errors)
 
-        # Accumulate results
         all_lambdas.extend(lambda_grid.tolist())
         all_cv_errors.extend(cv_errors.tolist())
 
@@ -130,76 +127,55 @@ def find_lambda_cv(matrix_a: np.ndarray, vec_y: np.ndarray, max_extensions: int 
         at_upper = local_best_idx == lam_n_points - 1
 
         if not at_lower and not at_upper:
-            # Optimum is interior — no need to extend further
-            found_interior = True
             break
 
         if attempt < max_extensions:
             if at_lower:
-                print(
-                    f"    Optimal at lower boundary ({lambda_grid[0]:.3e}). "
-                    f"Extending grid downward by factor {extend_factor}."
-                )
-                # Shift the search window downward, no overlap with current window
-                lam_hi = lam_lo
-                lam_lo = lam_lo / extend_factor
+                lam_hi, lam_lo = lam_lo, lam_lo / extend_factor
             else:
-                print(
-                    f"    Optimal at upper boundary ({lambda_grid[-1]:.3e}). "
-                    f"Extending grid upward by factor {extend_factor}."
-                )
-                # Shift the search window upward, no overlap with current window
-                lam_lo = lam_hi
-                lam_hi = lam_hi * extend_factor
+                lam_lo, lam_hi = lam_hi, lam_hi * extend_factor
 
-    if not found_interior:
-        warnings.warn(
-            f"Grid extension limit ({max_extensions}) reached. "
-            f"lambda_opt may not be the true optimum. "
-            f"Consider increasing max_extensions or checking your data.",
-            stacklevel=2,
-        )
-
-    # Find global best across all accumulated searches
     all_lambdas_arr = np.array(all_lambdas)
     all_cv_errors_arr = np.array(all_cv_errors)
     global_best_idx = int(np.argmin(all_cv_errors_arr))
-    lambda_opt = float(all_lambdas_arr[global_best_idx])
 
-    print(f"    lambda_opt = {lambda_opt:.3e}  (found in attempt {attempt + 1})")
-    print(f"    CV error   = {all_cv_errors_arr[global_best_idx]:.4f}")
-
-    return lambda_opt
+    return float(all_lambdas_arr[global_best_idx])
 
 
 # =============================================================
 # Core constrained optimization solver
 # =============================================================
 def solve_constrained_optimization(
-    matrix_a: np.ndarray, vec_y: np.ndarray, lam: float
+    matrix_a: np.ndarray, vec_y: np.ndarray, packet_weights: np.ndarray, lam: float
 ) -> np.ndarray:
     """
-    Solve sparse recovery using L1 + LS (two-stage):
+    Recover a sparse, non-negative solution via two-stage L1-regularized least squares.
 
-    Stage 1 - Plain L1 (support identification):
-        min_{x >= 0}  sum(x) + lambda * ||Ax - y||_2^2
+    Stage 1 — Support identification (L1 + LS):
+        Solve the penalised problem using a convex solver:
 
-    Stage 2 - NNLS on identified support:
-        min_{x_S >= 0}  ||A[:, S] x_S - y||_2
+            min_{x >= 0}  w^T x + lambda * ||Ax - y||_2^2
 
-    Args:
-        A: System matrix (shape: m x n)
-        y: Observation vector (shape: m,)
-        lam: Regularization parameter
+        where w are the packet weights. The solution identifies which bins
+        are likely non-zero (the *active support*).
+
+    Stage 2 — Solution polishing (NNLS):
+        Restrict to the active support S = {j : x_j > threshold} and solve
+        the unpenalised non-negative least-squares problem:
+
+            min_{x_S >= 0}  ||A[:, S] x_S - y||_2
+
+        This removes the shrinkage bias introduced by the L1 penalty in Stage 1.
     """
     n = matrix_a.shape[1]
     solver_list = ["CLARABEL", "SCS", "ECOS", "OSQP", "CVXOPT"]
 
-    # -------------------------
-    # Stage 1: Plain L1
-    # -------------------------
     vec_x = cp.Variable(n, nonneg=True)
-    objective = cp.Minimize(cp.sum(vec_x) + lam * cp.sum_squares(matrix_a @ vec_x - vec_y))
+
+    # We now map the original packet weights against the scaled Sum of Squares
+    objective = cp.Minimize(
+        (packet_weights @ vec_x) + lam * cp.sum_squares(matrix_a @ vec_x - vec_y)
+    )
     prob = cp.Problem(objective)
 
     for solver in solver_list:
@@ -207,29 +183,20 @@ def solve_constrained_optimization(
             prob.solve(solver=solver, verbose=False)
             if vec_x.value is not None and prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
                 break
-            warnings.warn(f"Solver {solver} failed. Trying next solver.", stacklevel=2)
         except cp.SolverError:
-            warnings.warn(f"Solver {solver} failed. Trying next solver.", stacklevel=2)
+            continue
 
     if vec_x.value is None:
         warnings.warn("All solvers failed. Returning zeros.", stacklevel=2)
         return np.zeros(n)
 
-    # -------------------------
-    # Stage 2: NNLS on support
-    # -------------------------
-    # support_threshold: Variables below this after Stage 1 are treated as zero
     support_threshold = 0.01
-
     active_mask = vec_x.value > support_threshold
 
     if not np.any(active_mask):
-        warnings.warn(
-            "No active variables found after L1. Consider lowering support_threshold or adjusting lambda.",
-            stacklevel=2,
-        )
         return vec_x.value
 
+    # Polish the active variables using the scaled matrices
     x_active, _ = nnls(matrix_a[:, active_mask], vec_y)
     x_refined = np.zeros(n)
     x_refined[active_mask] = x_active
@@ -240,37 +207,49 @@ def solve_constrained_optimization(
 # =============================================================
 # Mathematically grounded starting point
 # =============================================================
-def compute_lambda_baseline(matrix_a: np.ndarray, vec_y: np.ndarray) -> float:
+def compute_lambda_baseline(
+    matrix_a: np.ndarray, vec_y: np.ndarray, packet_weights: np.ndarray
+) -> float:
     """
-    Compute principled lambda search bounds using KKT theory and NNLS.
+    Compute principled lower and upper bounds for the lambda search range.
 
-    lam_min     : Transition point from KKT conditions. Below this, x=0 is
-                  optimal. lam_min = 1 / (2 * max_j (A^T y)_j)
+    Two reference values are derived:
 
-    lam_balance : Lambda where L1 and residual terms are equally weighted,
-                  estimated from the NNLS solution.
-                  lam_balance = ||x_nnls||_1 / ||Ax_nnls - y||_2^2
+    lam_min — KKT transition point:
+        The smallest lambda for which x = 0 is no longer optimal. Derived from
+        the KKT stationarity condition of the penalised objective:
 
-    Returns
-    -------
-    lam_min     : float
-    lam_balance : float
+            lam_min = 1 / (2 * max_j { (A^T y)_j / w_j })
+
+        For lambda below this threshold, x = 0 satisfies the KKT conditions and
+        is a valid solution. Above it, at least one bin must be active.
+
+    lam_balance — L1 / residual balance point:
+        The lambda at which the weighted L1 term and the squared residual term
+        contribute equally, estimated from the unconstrained NNLS solution:
+
+            lam_balance = (w^T x_nnls) / ||A x_nnls - y||_2^2
+
+        This acts as a soft upper bound: beyond this value the penalty dominates
+        and the solution is driven toward more sparsity than the data supports.
+
+    A.T @ y is essentially asking:
+    "which features are most correlated with what I'm trying to predict?"
     """
-    # A.T @ y is essentially asking:
-    # "which features are most correlated with what I'm trying to predict?"
     aty = matrix_a.T @ vec_y
-    max_aty = np.max(aty[aty > 0]) if np.any(aty > 0) else 0.0
 
-    if max_aty == 0:
+    valid_mask = aty > 0
+    if np.any(valid_mask):
+        max_ratio = np.max(aty[valid_mask] / packet_weights[valid_mask])
+        lam_min = 1.0 / (2.0 * max_ratio)
+    else:
         warnings.warn("A^T y has no positive entries — y may be all zeros.", stacklevel=2)
         lam_min = 1e-6
-    else:
-        lam_min = 1.0 / (2.0 * max_aty)
 
-    # NNLS gives the best-fit x >= 0, used to calibrate the upper grid bound
-    x_nnls, res_norm = nnls(matrix_a, vec_y)  # res_norm = ||Ax_nnls - y||_2
+    x_nnls, res_norm = nnls(matrix_a, vec_y)
     res_sq = res_norm**2
-    l1_nnls = np.sum(x_nnls)
+
+    l1_nnls = np.sum(packet_weights * x_nnls)
 
     if res_sq > 0 and l1_nnls > 0:
         lam_balance = l1_nnls / res_sq
