@@ -34,8 +34,7 @@ TX_HIST_CNTRS: list[str] = [
     "hni_tx_ok_256_to_511",
     "hni_tx_ok_512_to_1023",
     "hni_tx_ok_1024_to_2047",
-    "hni_tx_ok_2048_to_4095",
-    "hni_tx_ok_4096_to_8191",
+    "hni_tx_ok_2048_to_4095"
 ]
 
 TX_TC_CNTRS: list[str] = ["hni_pkts_sent_by_tc_0", "hni_pkts_sent_by_tc_1"]
@@ -48,7 +47,6 @@ RX_HIST_CNTRS: list[str] = [
     "hni_rx_ok_512_to_1023",
     "hni_rx_ok_1024_to_2047",
     "hni_rx_ok_2048_to_4095",
-    "hni_rx_ok_4096_to_8191",
 ]
 
 RX_TC_CNTRS: list[str] = ["hni_pkts_recv_by_tc_0", "hni_pkts_recv_by_tc_1"]
@@ -134,6 +132,15 @@ MSG_SIZE_SETS: dict = {
     "fine" : MSG_SIZES_FINE,
     "coarse" : MSG_SIZES_COARSE,
 }
+
+# Groups all four counter slices with their human-readable names and counter name lists.
+# Used by validate_solution to report per-group breakdowns consistently.
+COUNTER_GROUPS = [
+    ("TX Histogram",     TX_HIST_SLICE, TX_HIST_CNTRS),
+    ("TX Traffic Class", TX_TC_SLICE,   TX_TC_CNTRS),
+    ("RX Histogram",     RX_HIST_SLICE, RX_HIST_CNTRS),
+    ("RX Traffic Class", RX_TC_SLICE,   RX_TC_CNTRS),
+]
 
 # =============================================================
 # Network parameters
