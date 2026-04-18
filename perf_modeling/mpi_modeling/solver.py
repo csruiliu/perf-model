@@ -10,6 +10,7 @@ import warnings
 
 import cvxpy as cp
 import numpy as np
+from constants import COUNTER_GROUPS, RX_HIST_SLICE, TX_HIST_SLICE
 from scipy.optimize import nnls
 
 
@@ -305,3 +306,168 @@ def print_solution_summary(
                 print(f"        send: {s:<{pad}} recv: {r}")
         else:
             print("    bins : (none)")
+
+
+def validate_solution(
+    matrix_a: np.ndarray,
+    vec_y: np.ndarray,
+    vec_x: np.ndarray,
+    node_names: list[str] | None = None,
+    rel_tol: float = 0.10,
+) -> bool:
+    """
+    Validate that the predicted counters from solution x match the observed counters y.
+
+    For each node, computes y_hat = A @ x and compares it against y across four
+    counter groups: TX histogram, TX TC, RX histogram, RX TC.
+
+    A counter passes if:
+        |y_hat_i - y_i| / y_i <= rel_tol   (when y_i > 0)
+        y_hat_i == 0                         (when y_i == 0)
+
+    Packet conservation is checked separately by summing the TX and RX histogram
+    counters — the only counters that obey a strict conservation law (every packet
+    counted exactly once in exactly one bucket).
+    """
+    num_nodes = vec_y.shape[0]
+
+    if node_names is None:
+        node_names = [f"node_{n}" for n in range(num_nodes)]
+
+    if len(node_names) != num_nodes:
+        raise ValueError(
+            f"node_names has {len(node_names)} entries but vec_y has {num_nodes} rows."
+        )
+
+    all_pass = True
+
+    for node_idx in range(num_nodes):
+        node_pass = _validate_node(
+            matrix_a, vec_y[node_idx, :], vec_x[node_idx, :], node_names[node_idx], rel_tol
+        )
+        all_pass = all_pass and node_pass
+
+    width = 70
+    print(f"\n{'=' * width}")
+    print(f"  Overall validation : {'PASS' if all_pass else 'WARN'}")
+    print(f"{'=' * width}\n")
+
+    return all_pass
+
+
+def _validate_node(
+    matrix_a: np.ndarray, y_obs: np.ndarray, x_node: np.ndarray, node_name: str, rel_tol: float
+) -> bool:
+    """
+    Validate a single node's solution against its observed counters.
+
+    Reports three things:
+      1. Per-counter table: observed, predicted, absolute error, relative error, status.
+      2. Packet conservation summary: total TX/RX histogram packets observed vs predicted.
+      3. Overall L2 residual (absolute and relative).
+
+    Returns True if all per-counter checks and packet conservation pass.
+    """
+    y_hat = matrix_a @ x_node
+
+    width = 70
+    print(f"\n{'=' * width}")
+    print(f"  Node : {node_name}")
+    print(f"{'=' * width}")
+
+    all_counters_pass = True
+
+    # ------------------------------------------------------------------
+    # 1. Per-counter breakdown across all four counter groups
+    # ------------------------------------------------------------------
+    col_w = 30
+    header = (
+        f"  {'Counter':<{col_w}} {'Observed':>12} {'Predicted':>12} "
+        f"{'Abs Err':>12} {'Rel Err':>10} {'Status':>8}"
+    )
+    sep = "  " + "-" * (len(header) - 2)
+
+    for group_name, slc, counter_names in COUNTER_GROUPS:
+        print(f"\n  {group_name}:")
+        print(header)
+        print(sep)
+
+        y_obs_grp = y_obs[slc]
+        y_hat_grp = y_hat[slc]
+
+        for i, name in enumerate(counter_names):
+            obs = float(y_obs_grp[i])
+            pred = float(y_hat_grp[i])
+            abs_err = abs(pred - obs)
+
+            # Relative error definition:
+            #   - y_i > 0  : standard relative error
+            #   - y_i == 0 and pred == 0 : perfect match, rel_err = 0
+            #   - y_i == 0 and pred != 0 : unbounded error, flag as WARN
+            if obs > 0:
+                rel_err = abs_err / obs
+                status = "OK" if rel_err <= rel_tol else "WARN"
+            elif pred == 0.0:
+                rel_err = 0.0
+                status = "OK"
+            else:
+                rel_err = float("inf")
+                status = "WARN"
+
+            if status != "OK":
+                all_counters_pass = False
+
+            rel_err_str = f"{rel_err:.1%}" if rel_err != float("inf") else "inf"
+            print(
+                f"  {name:<{col_w}} {obs:>12.0f} {pred:>12.0f} "
+                f"{abs_err:>12.0f} {rel_err_str:>10} {status:>8}"
+            )
+
+    # ------------------------------------------------------------------
+    # 2. Packet conservation summary (histogram totals only)
+    #
+    # We sum only the 8 TX histogram and 8 RX histogram counters because
+    # each physical packet is counted exactly once in exactly one bucket —
+    # their sum is the true total packet count. TC counters classify the
+    # same packets by traffic class and would double-count if included.
+    # ------------------------------------------------------------------
+    total_tx_obs = float(np.sum(y_obs[TX_HIST_SLICE]))
+    total_tx_hat = float(np.sum(y_hat[TX_HIST_SLICE]))
+    total_rx_obs = float(np.sum(y_obs[RX_HIST_SLICE]))
+    total_rx_hat = float(np.sum(y_hat[RX_HIST_SLICE]))
+
+    tx_rel_err = abs(total_tx_hat - total_tx_obs) / total_tx_obs if total_tx_obs > 0 else 0.0
+    rx_rel_err = abs(total_rx_hat - total_rx_obs) / total_rx_obs if total_rx_obs > 0 else 0.0
+    tx_ok = tx_rel_err <= rel_tol
+    rx_ok = rx_rel_err <= rel_tol
+
+    pkt_header = f"  {'':30} {'Observed':>12} {'Predicted':>12} {'Rel Err':>10} {'Status':>8}"
+    pkt_sep = "  " + "-" * (len(pkt_header) - 2)
+
+    print("\n  Packet Conservation (histogram totals):")
+    print(pkt_header)
+    print(pkt_sep)
+    print(
+        f"  {'Total TX Histogram Pkts':<30} {total_tx_obs:>12.0f} {total_tx_hat:>12.0f} "
+        f"{tx_rel_err:>9.1%} {'OK' if tx_ok else 'WARN':>8}"
+    )
+    print(
+        f"  {'Total RX Histogram Pkts':<30} {total_rx_obs:>12.0f} {total_rx_hat:>12.0f} "
+        f"{rx_rel_err:>9.1%} {'OK' if rx_ok else 'WARN':>8}"
+    )
+
+    # ------------------------------------------------------------------
+    # 3. Overall L2 residual
+    # ------------------------------------------------------------------
+    residual = float(np.linalg.norm(y_hat - y_obs))
+    norm_y_obs = float(np.linalg.norm(y_obs))
+    rel_residual = residual / norm_y_obs if norm_y_obs > 0 else 0.0
+
+    print(f"\n  L2 residual : {residual:.2f}  (relative : {rel_residual:.2%})")
+
+    node_pass = all_counters_pass and tx_ok and rx_ok
+    verdict = "PASS" if node_pass else "WARN"
+    direction = "all counters within" if node_pass else "some counters exceed"
+    print(f"  Node status : {verdict} — {direction} {rel_tol * 100:.0f}% relative tolerance")
+
+    return node_pass

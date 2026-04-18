@@ -10,7 +10,7 @@ from pathlib import Path
 from build_matrix import build_matrix_a
 from constants import MSG_SIZE_SETS, RDZV_THRESHOLD
 from load_counters import load_counters_single_job
-from solver import print_solution_summary, solve_global
+from solver import print_solution_summary, solve_global, validate_solution
 from time_estimator import compute_upper_bound_time, create_direct_lookup_model, fit_latency_model
 
 
@@ -81,6 +81,9 @@ def main():
     # X's shape is (num_nodes, 2 * num_msg_size_bins)
     vec_x, lambdas_used = solve_global(matrix_a, y_for_solver, node_names)
     print_solution_summary(node_names, lambdas_used, vec_x, msg_size_sets)
+
+    # Validate that predicted counters match observed counters
+    validate_solution(matrix_a, y_for_solver, vec_x, node_names, rel_tol=0.05)
 
     # ----------------------------------------------------------
     # Step 4 — Estimate Communication Time Upper Bound
