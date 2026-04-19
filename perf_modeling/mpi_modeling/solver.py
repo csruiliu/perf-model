@@ -49,6 +49,7 @@ def solve_global(
 
     # 1. Compute baseline packet weights using the ORIGINAL, unscaled matrix
     packet_weights = np.sum(matrix_a, axis=0)
+    # packet_weights = np.ones(matrix_a.shape[1], dtype=np.float64)
 
     for node_idx in range(num_nodes):
         print(f"--- Node [{node_idx + 1}/{num_nodes}]: {node_names[node_idx]} ---")
@@ -209,54 +210,37 @@ def solve_constrained_optimization(
 # Mathematically grounded starting point
 # =============================================================
 def compute_lambda_baseline(
-    matrix_a: np.ndarray, vec_y: np.ndarray, packet_weights: np.ndarray
-) -> float:
-    """
-    Compute principled lower and upper bounds for the lambda search range.
+    matrix_a: np.ndarray,  # A_scaled — already Poisson-scaled
+    vec_y: np.ndarray,  # y_scaled — already Poisson-scaled
+    packet_weights: np.ndarray,  # w = sum(A_unscaled, axis=0) — unscaled column sums
+) -> tuple[float, float]:
+    # ------------------------------------------------------------------
+    # lam_min = min_j { W_j / (2 * (A^T 1)_j) }
+    #
+    # (A^T 1)_j = column sum of UNSCALED A = packet_weights[j]
+    # NOT np.sum(matrix_a, axis=0) which would give column sums of A_scaled
+    # ------------------------------------------------------------------
+    col_sums_unscaled = np.maximum(packet_weights, 1e-12)  # guard zero columns
+    lam_min = float(np.min(packet_weights / (2.0 * col_sums_unscaled)))
 
-    Two reference values are derived:
+    # ------------------------------------------------------------------
+    # lam_balance = W^T X_nnls / sum_i (A[i,:] X_nnls - Y[i])^2 / Y[i]
+    #
+    # Solved on the scaled system since:
+    #   sum_i (A_scaled[i,:] X - y_scaled[i])^2
+    #       == sum_i (A[i,:] X - Y[i])^2 / Y[i]
+    # ------------------------------------------------------------------
+    x_nnls, _ = nnls(matrix_a, vec_y)
 
-    lam_min — KKT transition point:
-        The smallest lambda for which x = 0 is no longer optimal. Derived from
-        the KKT stationarity condition of the penalised objective:
+    # Poisson-weighted residual via scaled equivalence
+    poisson_residual_sq = float(np.sum((matrix_a @ x_nnls - vec_y) ** 2))
+    l1_cost = float(packet_weights @ x_nnls)
 
-            lam_min = 1 / (2 * max_j { (A^T y)_j / w_j })
-
-        For lambda below this threshold, x = 0 satisfies the KKT conditions and
-        is a valid solution. Above it, at least one bin must be active.
-
-    lam_balance — L1 / residual balance point:
-        The lambda at which the weighted L1 term and the squared residual term
-        contribute equally, estimated from the unconstrained NNLS solution:
-
-            lam_balance = (w^T x_nnls) / ||A x_nnls - y||_2^2
-
-        This acts as a soft upper bound: beyond this value the penalty dominates
-        and the solution is driven toward more sparsity than the data supports.
-
-    A.T @ y is essentially asking:
-    "which features are most correlated with what I'm trying to predict?"
-    """
-    aty = matrix_a.T @ vec_y
-
-    valid_mask = aty > 0
-    if np.any(valid_mask):
-        max_ratio = np.max(aty[valid_mask] / packet_weights[valid_mask])
-        lam_min = 1.0 / (2.0 * max_ratio)
+    if poisson_residual_sq < 1e-12:
+        # Perfect fit — balance point is undefined; return a safe fallback
+        lam_balance = lam_min * 100.0
     else:
-        warnings.warn("A^T y has no positive entries — y may be all zeros.", stacklevel=2)
-        lam_min = 1e-6
-
-    x_nnls, res_norm = nnls(matrix_a, vec_y)
-    res_sq = res_norm**2
-
-    l1_nnls = np.sum(packet_weights * x_nnls)
-
-    if res_sq > 0 and l1_nnls > 0:
-        lam_balance = l1_nnls / res_sq
-    else:
-        warnings.warn("NNLS solution is degenerate. Falling back to lam_min * 1e4.", stacklevel=2)
-        lam_balance = lam_min * 1e4
+        lam_balance = l1_cost / poisson_residual_sq
 
     return lam_min, lam_balance
 
