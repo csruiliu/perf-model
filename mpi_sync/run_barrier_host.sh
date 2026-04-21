@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -J OMB_p2p_host
+#SBATCH -J OMB_barrier_host
 #SBATCH -o /pscratch/sd/r/ruiliu/osu-micro-benchmarks/results/OMB_%j/OMB_barrier_host-%j.out 
 #SBATCH -N 2
 #SBATCH -C cpu
@@ -15,11 +15,6 @@
 #the nid-topology differs with the system architechture.
 #The nodes identified above are maximally distant
 #on Perlmutter's Slingshot network.
-
-#The number of NICs(j) and CPU cores (k) per node
-#should be specified here.
-j=1   #NICs per node
-k=128 #Cores per node
 
 # IPM Setting
 export IPM_HOME=/pscratch/sd/r/ruiliu/IPM/install
@@ -63,17 +58,7 @@ hni_tx_ok_2048_to_4095 \
 hni_pkts_sent_by_tc_0 \
 hni_pkts_sent_by_tc_1 \
 hni_tx_paused_0 \
-hni_tx_paused_1 \
-hni_rx_paused_0 \
-hni_rx_paused_1 \
-oxe_channel_idle \
-pct_conn_sct_open \
-pct_responses_received \
-lpe_net_match_priority_0 \
-lpe_net_match_priority_1 \
-lpe_net_match_overflow_0 \
-lpe_net_match_overflow_1"
-
+hni_tx_paused_1"
 
 export RX_COUNTERS_STR="\
 hni_rx_ok_64 \
@@ -85,10 +70,10 @@ hni_rx_ok_1024_to_2047 \
 hni_rx_ok_2048_to_4095 \
 hni_pkts_recv_by_tc_0 \
 hni_pkts_recv_by_tc_1 \
-hni_tx_paused_0 \
-hni_tx_paused_1 \
 hni_rx_paused_0 \
-hni_rx_paused_1 \
+hni_rx_paused_1"
+
+export MISC_COUNTERS_STR="\
 oxe_channel_idle \
 pct_conn_sct_open \
 pct_responses_received \

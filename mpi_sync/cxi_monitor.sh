@@ -19,8 +19,8 @@ if [ -z "${RESULTS_DIR}" ] || [ ! -d "${RESULTS_DIR}" ]; then
     exit 1
 fi
 
-if [ -z "${TX_COUNTERS_STR}" ] || [ -z "${RX_COUNTERS_STR}" ]; then
-    echo "Error: TX_COUNTERS_STR or RX_COUNTERS_STR is not set."
+if [ -z "${TX_COUNTERS_STR}" ] || [ -z "${RX_COUNTERS_STR}" ] || [ -z "${MISC_COUNTERS_STR}" ]; then
+    echo "Error: TX_COUNTERS_STR or RX_COUNTERS_STR or MISC_COUNTERS_STR is not set."
     echo "  Define and export them in my_run_p2p_host.sh"
     exit 1
 fi
@@ -28,6 +28,7 @@ fi
 # Reconstruct arrays from exported strings
 read -ra TX_COUNTERS <<< "${TX_COUNTERS_STR}"
 read -ra RX_COUNTERS <<< "${RX_COUNTERS_STR}"
+read -ra MISC_COUNTERS_STR <<< "${MISC_COUNTERS_STR}"
 
 NODE=${SLURMD_NODENAME:-$(hostname -s)}
 NODE_DIR="${RESULTS_DIR}/${NODE}"
@@ -61,6 +62,16 @@ write_monitor_sample() {
         fi
         echo "${timestamp},${counter},RX,${value}"
     done >> "${MONITOR_FILE}"
+
+    # MISC counters
+    for counter in "${MISC_COUNTERS[@]}"; do
+        local telem_file="${TELEM_PATH}/${counter}"
+        local value=0
+        if [ -f "${telem_file}" ]; then
+            value=$(cat "${telem_file}" 2>/dev/null || echo 0)
+        fi
+        echo "${timestamp},${counter},MISC,${value}"
+    done >> "${MONITOR_FILE}"
 }
 
 
@@ -89,7 +100,7 @@ if [ "${SLURM_LOCALID}" -eq 0 ]; then
 
         echo "timestamp,counter_name,direction,value" > "${MONITOR_FILE}"
         echo "Starting monitor on ${NODE} → ${MONITOR_FILE}"
-        echo "  TX counters: ${#TX_COUNTERS[@]}, RX counters: ${#RX_COUNTERS[@]}"
+        echo "  TX counters: ${#TX_COUNTERS[@]}, RX counters: ${#RX_COUNTERS[@]}, MISC counters: ${#MISC_COUNTERS[@]}"
 
         (
             while true; do
