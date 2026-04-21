@@ -24,7 +24,7 @@ export IPM_REPORT=full
 
 #The paths to OMB and its point-to-point benchmarks
 #should be specified here
-OMB_DIR=/pscratch/sd/r/ruiliu/osu-micro-benchmarks
+OMB_DIR=/pscratch/sd/r/ruiliu/osu-micro-benchmarks/libexec/osu-micro-benchmarks
 OMB_PT2PT=${OMB_DIR}/mpi/pt2pt
 OMB_1SIDE=${OMB_DIR}/mpi/one-sided
 OMB_COLL=${OMB_DIR}/mpi/collective
