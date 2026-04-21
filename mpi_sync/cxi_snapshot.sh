@@ -29,8 +29,8 @@ if [ -z "${RESULTS_DIR}" ] || [ ! -d "${RESULTS_DIR}" ]; then
     exit 1
 fi
 
-if [ -z "${TX_COUNTERS_STR}" ] || [ -z "${RX_COUNTERS_STR}" ]; then
-    echo "Error: TX_COUNTERS_STR or RX_COUNTERS_STR is not set."
+if [ -z "${TX_COUNTERS_STR}" ] || [ -z "${RX_COUNTERS_STR}" || [ -z "${MISC_COUNTERS_STR}" ]; then
+    echo "Error: TX_COUNTERS_STR or RX_COUNTERS_STR or MISC_COUNTERS_STR is not set."
     echo "  Define and export them in my_run_p2p_host.sh"
     exit 1
 fi
@@ -38,6 +38,7 @@ fi
 # Reconstruct arrays from exported strings
 read -ra TX_COUNTERS <<< "${TX_COUNTERS_STR}"
 read -ra RX_COUNTERS <<< "${RX_COUNTERS_STR}"
+read -ra MISC_COUNTERS <<< "${MISC_COUNTERS_STR}"
 
 NODE=${SLURMD_NODENAME:-$(hostname -s)}
 NODE_DIR="${RESULTS_DIR}/${NODE}"
@@ -76,7 +77,7 @@ write_snapshot() {
 
     {
         echo "counter_name,direction,value"
-        for direction in TX RX; do
+        for direction in TX RX MISC; do
             local -n counters="${direction}_COUNTERS"
             for counter in "${counters[@]}"; do
                 telem_file="${telem_path}/${counter}"
@@ -133,6 +134,7 @@ echo "  Prefix     : ${PREFIX}"
 echo "  RESULTS_DIR: ${RESULTS_DIR}"
 echo "  TX counters: ${#TX_COUNTERS[@]}"
 echo "  RX counters: ${#RX_COUNTERS[@]}"
+echo "  MISC counters: ${#MISC_COUNTERS[@]}"
 echo "  NICs found : ${CXI_DEVICES[*]}"
 echo "=============================================="
 
