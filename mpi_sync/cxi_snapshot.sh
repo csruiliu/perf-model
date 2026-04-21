@@ -29,7 +29,7 @@ if [ -z "${RESULTS_DIR}" ] || [ ! -d "${RESULTS_DIR}" ]; then
     exit 1
 fi
 
-if [ -z "${TX_COUNTERS_STR}" ] || [ -z "${RX_COUNTERS_STR}" || [ -z "${MISC_COUNTERS_STR}" ]; then
+if [ -z "${TX_COUNTERS_STR}" ] || [ -z "${RX_COUNTERS_STR}" ] || [ -z "${MISC_COUNTERS_STR}" ]; then
     echo "Error: TX_COUNTERS_STR or RX_COUNTERS_STR or MISC_COUNTERS_STR is not set."
     echo "  Define and export them in my_run_p2p_host.sh"
     exit 1

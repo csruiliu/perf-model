@@ -106,7 +106,7 @@ echo "=== Node Assignment for osu_bw ===" > $RESULTS_DIR/runtime.out
 
 start=$(date +%s.%N)
 
-srun -N 2 -n 2 ./cxi_monitor.sh ${OMB_COLL}/osu_barrier -i $ITER -x $WARMUP_ITER H H
+srun -N 2 -n 2 ${OMB_COLL}/osu_barrier -i $ITER -x $WARMUP_ITER H H
 
 end=$(date +%s.%N)
 

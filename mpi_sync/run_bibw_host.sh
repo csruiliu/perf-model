@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH -J OMB_barrier_host
-#SBATCH -o /pscratch/sd/r/ruiliu/osu-micro-benchmarks/results/OMB_%j/OMB_barrier_host-%j.out 
+#SBATCH -J OMB_bibw_host
+#SBATCH -o /pscratch/sd/r/ruiliu/osu-micro-benchmarks/results/OMB_%j/OMB_bibw_host-%j.out 
 #SBATCH -N 2
 #SBATCH -C cpu
 #SBATCH -q sow
@@ -106,7 +106,7 @@ echo "=== Node Assignment for osu_bw ===" > $RESULTS_DIR/runtime.out
 
 start=$(date +%s.%N)
 
-srun -N 2 -n 2 ./cxi_bibw.sh ${OMB_PT2PT}/osu_bibw -m $MESSAGE_SIZE -i $ITER -x $WARMUP_ITER -W $WINDOW_SIZE H H
+srun -N 2 -n 2 ${OMB_PT2PT}/osu_bibw -m $MESSAGE_SIZE -i $ITER -x $WARMUP_ITER -W $WINDOW_SIZE H H
 
 end=$(date +%s.%N)
 
