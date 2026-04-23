@@ -51,6 +51,8 @@ RX_HIST_CNTRS: list[str] = [
 
 RX_TC_CNTRS: list[str] = ["hni_pkts_recv_by_tc_0", "hni_pkts_recv_by_tc_1"]
 
+MISC_CNTRS = ["lpe_net_match_priority_0", "lpe_net_match_overflow_0"]
+
 # Validate symmetry before deriving anything
 assert len(TX_HIST_CNTRS) == len(RX_HIST_CNTRS), "TX and RX histogram counter lists must have the same length"
 assert len(TX_TC_CNTRS) == len(RX_TC_CNTRS), "TX and RX TC counter lists must have the same length"
@@ -102,7 +104,7 @@ MSG_SIZES_PM: np.ndarray = np.array([
     2  * 1024,  4  * 1024,  8  * 1024,  16 * 1024,
     32 * 1024,  64 * 1024,  128 * 1024, 256 * 1024,
     512 * 1024, 1024 * 1024, 2048 * 1024, 4096 * 1024,
-    8192 * 1024, 16384 * 1024, 32768 * 1024, 65536 * 1024
+    8192 * 1024,
 ], dtype=np.float64)
 
 MSG_SIZES_FINE: np.ndarray = np.array([
@@ -115,7 +117,6 @@ MSG_SIZES_FINE: np.ndarray = np.array([
     4  * 1024,  8  * 1024,  16 * 1024,  32 * 1024,
     64 * 1024,  128 * 1024, 256 * 1024, 512 * 1024,
     1024 * 1024, 2048 * 1024, 4096 * 1024, 8192 * 1024,
-    16384 * 1024, 32768 * 1024, 65536 * 1024
 ], dtype=np.float64)
 
 MSG_SIZES_COARSE: np.ndarray = np.array([
@@ -123,7 +124,6 @@ MSG_SIZES_COARSE: np.ndarray = np.array([
     4  * 1024,  8  * 1024,  16 * 1024,  32 * 1024,
     64 * 1024,  128 * 1024, 256 * 1024, 512 * 1024,
     1024 * 1024, 2048 * 1024, 4096 * 1024, 8192 * 1024,
-    16384 * 1024, 32768 * 1024, 65536 * 1024
 ], dtype=np.float64)
 
 # dict of msg size sets

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from constants import ALL_CNTRS, NUM_ALL_CNTRS, RX_HIST_SLICE, TX_HIST_SLICE
+from constants import ALL_CNTRS, MISC_CNTRS, NUM_ALL_CNTRS, RX_HIST_SLICE, TX_HIST_SLICE
 
 
 # =============================================================
@@ -55,11 +55,17 @@ def load_counters_single_job(counter_dir: str | Path) -> tuple[np.ndarray, list[
     vector_y = np.zeros((num_nodes, 2 * NUM_ALL_CNTRS), dtype=np.float64)
     # create list of node names in the same order as Y
     node_names: list[str] = []
+    total_messages: dict[str, int] = {}
 
     for node_idx, node_dir in enumerate(node_dirs):
-        node_names.append(node_dir.name)
-        vector_y[node_idx, :] = load_node_counters(node_dir / "cxi0" / "counters.csv")
-        print(f"  Loaded [{node_idx + 1}/{num_nodes}] {node_dir.name}")
+        node_name = node_dir.name
+        node_names.append(node_name)
+
+        y_node, n_total = load_node_counters(node_dir / "cxi0" / "counters.csv")
+        vector_y[node_idx, :] = y_node
+        total_messages[node_name] = n_total
+
+        print(f"  Loaded [{node_idx + 1}/{num_nodes}] {node_name}  (n_total={n_total})")
 
     # check loaded data for common issues before returning
     _validate(vector_y, node_names)
@@ -68,7 +74,7 @@ def load_counters_single_job(counter_dir: str | Path) -> tuple[np.ndarray, list[
         f"\nDone. Y shape: {vector_y.shape}  (N={num_nodes} nodes, each has {2 * NUM_ALL_CNTRS} counters)"
     )
 
-    return vector_y, node_names
+    return vector_y, node_names, total_messages
 
 
 # =============================================================
@@ -111,7 +117,22 @@ def load_node_counters(counter_file: Path) -> np.ndarray:
     if np.any(y_node < 0):
         raise ValueError(f"{counter_file}: negative counter values detected.")
 
-    return y_node
+    # --- total message count ---
+    missing_msg = [name for name in MISC_CNTRS if name not in counter_lookup]
+    if missing_msg:
+        raise KeyError(
+            f"{counter_file}: missing message-total counters:\n"
+            + "\n".join(f"  - {m}" for m in missing_msg)
+        )
+
+    n_total = int(counter_lookup["lpe_net_match_priority_0"]) + int(
+        counter_lookup["lpe_net_match_overflow_0"]
+    )
+
+    if n_total < 0:
+        raise ValueError(f"{counter_file}: negative total message count ({n_total}).")
+
+    return y_node, n_total
 
 
 # =============================================================

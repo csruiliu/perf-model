@@ -18,7 +18,10 @@ from scipy.optimize import nnls
 # Global solver — single run
 # =============================================================
 def solve_global(
-    matrix_a: np.ndarray, vec_y: np.ndarray, node_names: list[str] | None = None
+    matrix_a: np.ndarray,
+    vec_y: np.ndarray,
+    node_names: list[str] | None = None,
+    total_messages: dict[str, int] | None = None,
 ) -> tuple[np.ndarray, list[float]]:
     """
     Solve the sparse recovery problem independently for every node in a single pass.
@@ -42,18 +45,29 @@ def solve_global(
     if node_names is None:
         node_names = [f"node_{n}" for n in range(num_nodes)]
 
+    if total_messages is not None:
+        validate_message_counts(total_messages, node_names)
+
     print(f"  A : {matrix_a.shape}   Y : {vec_y.shape}   X : ({num_nodes}, {matrix_a.shape[1]})\n")
 
+    num_msg_sizes = matrix_a.shape[1] // 2
     vec_x = np.zeros((num_nodes, matrix_a.shape[1]))
     lambda_used_list = []
 
     # 1. Compute baseline packet weights using the ORIGINAL, unscaled matrix
     packet_weights = np.sum(matrix_a, axis=0)
-    # packet_weights = np.ones(matrix_a.shape[1], dtype=np.float64)
 
     for node_idx in range(num_nodes):
-        print(f"--- Node [{node_idx + 1}/{num_nodes}]: {node_names[node_idx]} ---")
+        node_name = node_names[node_idx]
+
+        print(f"--- Node [{node_idx + 1}/{num_nodes}]: {node_name} ---")
         y_nid = vec_y[node_idx, :]
+
+        n_total = _get_node_message_total(total_messages, node_name)
+        if n_total is not None:
+            print(f"  Message count constraint: n_total={int(n_total)}")
+        else:
+            print("  Message count constraint: none")
 
         # 2. Compute Poisson variance weights for this node
         # We add 1.0 to avoid division by zero on empty counters
@@ -64,8 +78,22 @@ def solve_global(
         y_scaled = y_nid * row_scales
 
         print("  Auto-tuning lambda (residual tolerance):")
-        lam = find_lambda_cv(matrix_a_scaled, y_scaled, packet_weights, max_extensions=5)
-        x_nid = solve_constrained_optimization(matrix_a_scaled, y_scaled, packet_weights, lam)
+        lam = find_lambda_cv(
+            matrix_a_scaled,
+            y_scaled,
+            packet_weights,
+            num_msg_sizes=num_msg_sizes,
+            n_total=n_total,
+            max_extensions=5,
+        )
+        x_nid = solve_constrained_optimization(
+            matrix_a_scaled,
+            y_scaled,
+            packet_weights,
+            lam,
+            num_msg_sizes=num_msg_sizes,
+            n_total=n_total,
+        )
         vec_x[node_idx, :] = x_nid
         lambda_used_list.append(lam)
 
@@ -81,10 +109,19 @@ def solve_global(
 # Lambda selection via Leave-One-Counter-Out Cross Validation
 # =============================================================
 def find_lambda_cv(
-    matrix_a: np.ndarray, vec_y: np.ndarray, packet_weights: np.ndarray, max_extensions: int = 5
+    matrix_a: np.ndarray,
+    vec_y: np.ndarray,
+    packet_weights: np.ndarray,
+    num_msg_sizes: int,
+    n_total: float | None = None,
+    max_extensions: int = 5,
 ) -> float:
     """
     Select the regularization parameter lambda via Leave-One-Counter-Out cross-validation.
+
+    When n_total is provided, the message count equality constraint is enforced in
+    every CV fold so that the selected lambda is consistent with the constrained
+    problem that will be solved at inference time.
 
     A logarithmic grid of lambda candidates is evaluated; for each candidate, every
     counter is held out in turn and the squared prediction error on that counter is
@@ -116,7 +153,12 @@ def find_lambda_cv(
                 mask = np.ones(m, dtype=bool)
                 mask[k] = False
                 x_k = solve_constrained_optimization(
-                    matrix_a[mask, :], vec_y[mask], packet_weights, lam
+                    matrix_a[mask, :],
+                    vec_y[mask],
+                    packet_weights,
+                    lam,
+                    num_msg_sizes=num_msg_sizes,
+                    n_total=n_total,
                 )
                 fold_errors[k] = (matrix_a[k, :] @ x_k - vec_y[k]) ** 2
             cv_errors[i] = np.mean(fold_errors)
@@ -148,7 +190,12 @@ def find_lambda_cv(
 # Core constrained optimization solver
 # =============================================================
 def solve_constrained_optimization(
-    matrix_a: np.ndarray, vec_y: np.ndarray, packet_weights: np.ndarray, lam: float
+    matrix_a: np.ndarray,
+    vec_y: np.ndarray,
+    packet_weights: np.ndarray,
+    lam: float,
+    num_msg_sizes: int,
+    n_total: float | None = None,
 ) -> np.ndarray:
     """
     Recover a sparse, non-negative solution via two-stage L1-regularized least squares.
@@ -157,9 +204,11 @@ def solve_constrained_optimization(
         Solve the penalised problem using a convex solver:
 
             min_{x >= 0}  w^T x + lambda * ||Ax - y||_2^2
+            subject to:
+                sum(x) == n_total   (if n_total is not None)
 
-        where w are the packet weights. The solution identifies which bins
-        are likely non-zero (the *active support*).
+        where x[:N] are send-counts and x[N:] are recv-counts, and the constraint
+        fixes their combined total while leaving the send/recv split free.
 
     Stage 2 — Solution polishing (NNLS):
         Restrict to the active support S = {j : x_j > threshold} and solve
@@ -172,13 +221,16 @@ def solve_constrained_optimization(
     n = matrix_a.shape[1]
     solver_list = ["CLARABEL", "SCS", "ECOS", "OSQP", "CVXOPT"]
 
-    vec_x = cp.Variable(n, nonneg=True)
+    # --- merge identical columns before solving ---
+    matrix_a_merged, weights_merged, groups = merge_identical_columns(matrix_a, packet_weights)
+    n_merged = matrix_a_merged.shape[1]
 
-    # We now map the original packet weights against the scaled Sum of Squares
+    vec_x = cp.Variable(n_merged, nonneg=True)
     objective = cp.Minimize(
-        (packet_weights @ vec_x) + lam * cp.sum_squares(matrix_a @ vec_x - vec_y)
+        (weights_merged @ vec_x) + lam * cp.sum_squares(matrix_a_merged @ vec_x - vec_y)
     )
-    prob = cp.Problem(objective)
+    constraints = _build_message_count_constraints(vec_x, n_total)
+    prob = cp.Problem(objective, constraints)
 
     for solver in solver_list:
         try:
@@ -193,17 +245,18 @@ def solve_constrained_optimization(
         return np.zeros(n)
 
     support_threshold = 0.01
-    active_mask = vec_x.value > support_threshold
+    active_mask_merged = vec_x.value > support_threshold
 
-    if not np.any(active_mask):
-        return vec_x.value
+    if not np.any(active_mask_merged):
+        return expand_solution(vec_x.value, groups, n)
 
-    # Polish the active variables using the scaled matrices
-    x_active, _ = nnls(matrix_a[:, active_mask], vec_y)
-    x_refined = np.zeros(n)
-    x_refined[active_mask] = x_active
+    # --- Stage 2: polish on the merged active support ---
+    x_refined_merged = _polish_active_support(
+        matrix_a_merged, vec_y, active_mask_merged, n_total, n_merged
+    )
 
-    return x_refined
+    # --- expand back to original column space ---
+    return expand_solution(x_refined_merged, groups, n)
 
 
 # =============================================================
@@ -245,44 +298,195 @@ def compute_lambda_baseline(
     return lam_min, lam_balance
 
 
+def merge_identical_columns(
+    matrix_a: np.ndarray, packet_weights: np.ndarray, tol: float = 1e-6
+) -> tuple[np.ndarray, np.ndarray, list[list[int]]]:
+    """
+    Detect groups of identical columns in matrix_a, merge each group into a
+    single representative column, and accumulate the corresponding packet weights.
+
+    Returns
+    -------
+    matrix_a_merged : np.ndarray, shape (m, n_unique)
+        Reduced matrix with one column per unique fingerprint.
+    weights_merged : np.ndarray, shape (n_unique,)
+        Accumulated packet weights for each merged column.
+    groups : list[list[int]]
+        groups[k] is the list of original column indices that were merged into
+        merged column k.  len(groups) == n_unique.
+    """
+    n = matrix_a.shape[1]
+    visited = np.zeros(n, dtype=bool)
+    groups = []
+
+    for i in range(n):
+        if visited[i]:
+            continue
+        group = [i]
+        for j in range(i + 1, n):
+            if not visited[j] and np.linalg.norm(matrix_a[:, i] - matrix_a[:, j]) < tol:
+                group.append(j)
+        for idx in group:
+            visited[idx] = True
+        groups.append(group)
+
+    n_unique = len(groups)
+    matrix_a_merged = np.zeros((matrix_a.shape[0], n_unique), dtype=np.float64)
+    weights_merged = np.zeros(n_unique, dtype=np.float64)
+
+    for k, group in enumerate(groups):
+        matrix_a_merged[:, k] = matrix_a[:, group[0]]
+        weights_merged[k] = np.sum(packet_weights[group])
+
+    return matrix_a_merged, weights_merged, groups
+
+
+def expand_solution(x_merged: np.ndarray, groups: list[list[int]], n_original: int) -> np.ndarray:
+    """
+    Expand a solution on the merged system back to the original column space.
+
+    The entire value of each merged column is placed on the first member of
+    the group; all other members are set to zero.  This is the accumulation
+    behaviour of the original NNLS code.
+
+    Parameters
+    ----------
+    x_merged : np.ndarray, shape (n_unique,)
+        Solution in the merged column space.
+    groups : list[list[int]]
+        Column grouping returned by merge_identical_columns.
+    n_original : int
+        Number of columns in the original (unmerged) matrix.
+    """
+    x_full = np.zeros(n_original, dtype=np.float64)
+    for k, group in enumerate(groups):
+        x_full[group[0]] = x_merged[k]  # accumulate into first member
+    return x_full
+
+
+def _polish_active_support(
+    matrix_a: np.ndarray,
+    vec_y: np.ndarray,
+    active_mask: np.ndarray,
+    n_total: float | None,
+    n_total_vars: int,
+) -> np.ndarray:
+    """
+    Polish the Stage-1 solution by solving an unpenalised NNLS restricted to the
+    active support, while re-applying the message count constraint.
+
+    When n_total is None, scipy.optimize.nnls is used for speed.
+    When n_total is provided, CVXPY enforces sum(x_active) == n_total.
+    Falls back to unconstrained NNLS if the constrained polish fails.
+    """
+    x_refined = np.zeros(n_total_vars)
+
+    if n_total is None:
+        # No constraint — fast path via scipy NNLS
+        x_active, _ = nnls(matrix_a[:, active_mask], vec_y)
+        x_refined[active_mask] = x_active
+        return x_refined
+
+    # Constrained polish via CVXPY
+    n_active = int(np.sum(active_mask))
+    x_var = cp.Variable(n_active, nonneg=True)
+    objective = cp.Minimize(cp.sum_squares(matrix_a[:, active_mask] @ x_var - vec_y))
+    polish_constraints = [cp.sum(x_var) == n_total]
+
+    prob = cp.Problem(objective, polish_constraints)
+    solver_list = ["CLARABEL", "SCS", "ECOS", "OSQP", "CVXOPT"]
+
+    for solver in solver_list:
+        try:
+            prob.solve(solver=solver, verbose=False)
+            if x_var.value is not None and prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
+                break
+        except cp.SolverError:
+            continue
+
+    if x_var.value is not None:
+        x_refined[active_mask] = x_var.value
+    else:
+        warnings.warn(
+            "Constrained polish failed; falling back to unconstrained NNLS.", stacklevel=3
+        )
+        x_active, _ = nnls(matrix_a[:, active_mask], vec_y)
+        x_refined[active_mask] = x_active
+
+    return x_refined
+
+
+def _get_node_message_total(total_messages: dict[str, int] | None, node_name: str) -> float | None:
+    """Return the total message count (send + recv) for a node, or None if unconstrained."""
+    if total_messages is None or node_name not in total_messages:
+        return None
+    return float(total_messages[node_name])
+
+
+def _build_message_count_constraints(vec_x: cp.Variable, n_total: float | None) -> list:
+    """
+    Return a single CVXPY equality constraint:
+        sum(x) == n_total
+    meaning sum(x_send) + sum(x_recv) == n_total.
+    The send/recv split is left free to the solver.
+    Returns an empty list when n_total is None.
+    """
+    if n_total is None:
+        return []
+    return [cp.sum(vec_x) == n_total]
+
+
 # =============================================================
 # Utility function to print solution summary
 # =============================================================
 def print_solution_summary(
-    node_names: list[str], lambda_used: list[float], vec_x: np.ndarray, msg_size_sets: list[int]
+    node_names: list[str],
+    lambda_used: list[float],
+    vec_x: np.ndarray,
+    msg_size_sets: np.ndarray,
+    total_messages: dict[str, int] | None = None,
 ) -> None:
-    """Print per-node lambda selection and solution summary."""
     if vec_x.shape[1] % 2 != 0:
         raise ValueError(f"X has {vec_x.shape[1]} columns — expected an even number.")
-
     num_msg_sizes = vec_x.shape[1] // 2
 
-    print("\n=== Residual Tolerance Summary ===")
-    print(
-        f"  {'Node':<20} {'lambda':>12} {'active_bins':>12} {'total_sends':>12} {'total_recvs':>12}"
+    print("\n=== Solution Summary ===")
+    header = (
+        f"  {'Node':<20} {'lambda':>12} {'active_bins':>12} "
+        f"{'total_sends':>14} {'total_recvs':>14} {'solved_total':>14}"
     )
-    print("  " + "-" * 70)
+    if total_messages:
+        header += f"  {'expected_total':>15}"
+    print(header)
+    print("  " + "-" * (90 + (17 if total_messages else 0)))
 
     for node_idx, (name, lambda_val) in enumerate(zip(node_names, lambda_used, strict=True)):
         x_send = vec_x[node_idx, :num_msg_sizes]
         x_recv = vec_x[node_idx, num_msg_sizes:]
-        active = int(np.sum(vec_x[node_idx, :] > 0.5))
-        tot_send = int(np.sum(x_send))
-        tot_recv = int(np.sum(x_recv))
 
-        print(f"  {name:<20} {lambda_val:>12.3e} {active:>12} {tot_send:>12} {tot_recv:>12}")
+        active = int(np.sum(x_send > 0.5) + np.sum(x_recv > 0.5))
+        tot_send = int(np.round(np.sum(x_send)))
+        tot_recv = int(np.round(np.sum(x_recv)))
+        solved_total = tot_send + tot_recv
+
+        row = (
+            f"  {name:<20} {lambda_val:>12.3e} {active:>12} "
+            f"{tot_send:>14} {tot_recv:>14} {solved_total:>14}"
+        )
+        if total_messages and name in total_messages:
+            row += f"  {int(total_messages[name]):>15}"
+        print(row)
 
         active_send_bins = np.where(x_send > 0.5)[0].tolist()
         active_recv_bins = np.where(x_recv > 0.5)[0].tolist()
 
         if active_send_bins or active_recv_bins:
-            send_pairs = [f"{msg_size_sets[i]}: {x_send[i]:.2f}" for i in active_send_bins]
-            recv_pairs = [f"{msg_size_sets[i]}: {x_recv[i]:.2f}" for i in active_recv_bins]
+            send_pairs = [f"{int(msg_size_sets[i])}B: {x_send[i]:.2f}" for i in active_send_bins]
+            recv_pairs = [f"{int(msg_size_sets[i])}B: {x_recv[i]:.2f}" for i in active_recv_bins]
 
             max_len = max(len(send_pairs), len(recv_pairs))
             send_pairs += [""] * (max_len - len(send_pairs))
             recv_pairs += [""] * (max_len - len(recv_pairs))
-
             pad = max(len(s) for s in send_pairs) + 2 if send_pairs else 0
 
             print("    bins :")
@@ -290,6 +494,23 @@ def print_solution_summary(
                 print(f"        send: {s:<{pad}} recv: {r}")
         else:
             print("    bins : (none)")
+
+
+def validate_message_counts(total_messages: dict[str, int], node_names: list[str]) -> None:
+    unknown = set(total_messages) - set(node_names)
+    if unknown:
+        raise ValueError(
+            "total_messages contains node names not present in the loaded data:\n"
+            + "\n".join(f"  {n}" for n in sorted(unknown))
+        )
+
+    for name, n_total in total_messages.items():
+        if n_total < 0:
+            raise ValueError(
+                f"Node '{name}': total message count must be non-negative (got n_total={n_total})."
+            )
+
+    print(f"  [OK] total_messages validated for {len(total_messages)} node(s).")
 
 
 def validate_solution(
