@@ -54,27 +54,42 @@ def load_counters_single_job(counter_dir: str | Path) -> tuple[np.ndarray, list[
     # create Y vector with shape (num_nodes, 2 * NUM_ALL_CNTRS)
     vector_y = np.zeros((num_nodes, 2 * NUM_ALL_CNTRS), dtype=np.float64)
     # create list of node names in the same order as Y
-    node_names: list[str] = []
-    total_messages: dict[str, int] = {}
+    node_name_list: list[str] = []
+
+    # Estimated sending and recving messages of each node
+    node_send_msgs: dict[str, int] = {}
+    node_recv_msgs: dict[str, int] = {}
 
     for node_idx, node_dir in enumerate(node_dirs):
         node_name = node_dir.name
-        node_names.append(node_name)
+        node_name_list.append(node_name)
 
         y_node, n_total = load_counters_single_node(node_dir / "cxi0" / "counters.csv")
         vector_y[node_idx, :] = y_node
-        total_messages[node_name] = n_total
+        node_recv_msgs[node_name] = n_total
 
         print(f"  Loaded [{node_idx + 1}/{num_nodes}] {node_name}  (n_total={n_total})")
 
+    for node_name in node_name_list:
+        if num_nodes > 1:
+            other_totals = [
+                t for key, t in node_recv_msgs.items() if key != node_name and t is not None
+            ]
+            if len(other_totals) > 0:
+                n_send = sum(other_totals) / (num_nodes - 1)
+            else:
+                raise ValueError("Cannot get n_send using other node reeciving messages!")
+
+            node_send_msgs[node_name] = n_send
+
     # check loaded data for common issues before returning
-    _validate(vector_y, node_names, total_messages)
+    _validate(vector_y, node_name_list, node_send_msgs, node_recv_msgs)
 
     print(
         f"\nDone. Y shape: {vector_y.shape}  (N={num_nodes} nodes, each has {2 * NUM_ALL_CNTRS} counters)"
     )
 
-    return vector_y, node_names, total_messages
+    return vector_y, node_name_list, node_send_msgs, node_recv_msgs
 
 
 # =============================================================
@@ -138,16 +153,23 @@ def load_counters_single_node(counter_file: Path) -> np.ndarray:
 # =============================================================
 # Validation
 # =============================================================
-def _validate(vector_y: np.ndarray, node_names: list[str], total_messages: dict[str, int]) -> None:
+def _validate(
+    vector_y: np.ndarray,
+    node_names: list[str],
+    node_send_msg_counts: dict[str, int],
+    node_recv_msg_counts: dict[str, int],
+) -> None:
     """Check loaded counter data for common issues."""
     if not node_names:
         raise ValueError("node_names is empty!")
 
-    if not total_messages:
-        raise ValueError("total_messages is empty!")
+    if not node_send_msg_counts or not node_recv_msg_counts:
+        raise ValueError("node_send_msg_counts or node_recv_msg_counts is empty!")
 
-    if set(total_messages) != set(node_names):
-        raise ValueError("total_messages contains node names not present in the loaded data")
+    if set(node_send_msg_counts) != set(node_names) or set(node_recv_msg_counts) != set(node_names):
+        raise ValueError(
+            "node_send_msg_counts or node_recv_msg_counts contains node names not present in the loaded data"
+        )
 
     num_nodes = vector_y.shape[0]
     print("\n  Validating...")
