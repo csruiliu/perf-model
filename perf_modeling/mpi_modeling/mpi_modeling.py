@@ -7,7 +7,7 @@ Full pipeline entry point for the MPI communication model.
 import argparse
 from pathlib import Path
 
-from build_matrix import build_matrix_a
+from build_matrix import build_matrix_a, validate_matrix_a
 from constants import MSG_SIZE_SETS, RDZV_THRESHOLD
 from load_counters import load_counters_single_job
 from solver import print_solution_summary, solve_global, validate_solution
@@ -58,7 +58,9 @@ def main():
 
     # Y has shape (num_nodes, 2 * NUM_ALL_CNTRS)
     # The first NUM_ALL_CNTRS columns are TX counters and the next NUM_ALL_CNTRS columns are RX counters
-    y_for_solver, node_names, total_messages = load_counters_single_job(args.counter_dir)
+    y_for_solver, node_names, node_send_msgs, node_recv_msgs = load_counters_single_job(
+        args.counter_dir
+    )
     # ----------------------------------------------------------
     # Step 2 — Build signature matrix A
     # ----------------------------------------------------------
@@ -68,7 +70,13 @@ def main():
 
     # Matrix A's shape is (2 * NUM_ALL_CNTRS, 2 * num_msg_sizes)
     matrix_a = build_matrix_a(msg_size_sets)
-    # validate_matrixA(A, msg_size_sets, target_size=128, count=100000, case_name="TEST CASE 1 (Eager Protocol)")
+    validate_matrix_a(
+        matrix_a,
+        msg_size_sets,
+        target_size=128,
+        count=100000,
+        case_name="TEST CASE 1 (Eager Protocol)",
+    )
 
     # ----------------------------------------------------------
     # Step 3 — Solve global optimization
@@ -78,8 +86,13 @@ def main():
     print("=" * 60)
 
     # X's shape is (num_nodes, 2 * num_msg_size_bins)
-    vec_x, lambdas_used = solve_global(matrix_a, y_for_solver, node_names, total_messages)
-    print_solution_summary(node_names, lambdas_used, vec_x, msg_size_sets, total_messages)
+    vec_x, lambdas_used = solve_global(
+        matrix_a, y_for_solver, node_names, msg_size_sets, node_send_msgs, node_recv_msgs
+    )
+
+    print_solution_summary(
+        node_names, lambdas_used, vec_x, msg_size_sets, node_send_msgs, node_recv_msgs
+    )
 
     # Validate that predicted counters match observed counters
     validate_solution(matrix_a, y_for_solver, vec_x, node_names, rel_tol=0.05)
