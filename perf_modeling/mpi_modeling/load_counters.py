@@ -68,7 +68,7 @@ def load_counters_single_job(counter_dir: str | Path) -> tuple[np.ndarray, list[
         print(f"  Loaded [{node_idx + 1}/{num_nodes}] {node_name}  (n_total={n_total})")
 
     # check loaded data for common issues before returning
-    _validate(vector_y, node_names)
+    _validate(vector_y, node_names, total_messages)
 
     print(
         f"\nDone. Y shape: {vector_y.shape}  (N={num_nodes} nodes, each has {2 * NUM_ALL_CNTRS} counters)"
@@ -138,8 +138,17 @@ def load_counters_single_node(counter_file: Path) -> np.ndarray:
 # =============================================================
 # Validation
 # =============================================================
-def _validate(vector_y: np.ndarray, node_names: list[str]) -> None:
+def _validate(vector_y: np.ndarray, node_names: list[str], total_messages: dict[str, int]) -> None:
     """Check loaded counter data for common issues."""
+    if not node_names:
+        raise ValueError("node_names is empty!")
+
+    if not total_messages:
+        raise ValueError("total_messages is empty!")
+
+    if set(total_messages) != set(node_names):
+        raise ValueError("total_messages contains node names not present in the loaded data")
+
     num_nodes = vector_y.shape[0]
     print("\n  Validating...")
 
