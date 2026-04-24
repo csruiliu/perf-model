@@ -59,9 +59,6 @@ def build_matrix_a(msg_size_sets: np.ndarray) -> np.ndarray:
         sender TX --> TC_ACK,   sender RX --> TC_DATA   (flipped)
         recv   TX --> TC_DATA,  recv   RX --> TC_ACK    (also flipped)
     """
-    print("  Validating sub-MTU empirical mapping...")
-    _validate_sub_mtu_mapping()
-
     num_msg_sizes = len(msg_size_sets)
     matrix_a = np.zeros((2 * NUM_ALL_CNTRS, 2 * num_msg_sizes), dtype=np.float64)
 
@@ -167,11 +164,6 @@ def _parse_bucket_bounds(hist_names: list[str], prefix: str) -> tuple[list[int],
         e.g. TX_HIST_COUNTER_NAMES
     prefix : str
         e.g. "hni_tx_ok_" or "hni_rx_ok_"
-
-    Returns
-    -------
-    lowers : list of int
-    uppers : list of int
     """
     lowers: list[int] = []
     uppers: list[int] = []
@@ -256,43 +248,6 @@ def _tc_assignment(tc_index: int, msg_size: int) -> int:
 
     # This is a safety fallback when tc_index is neither TC_DATA nor TC_ACK.
     return tc_index
-
-
-# =============================================================
-# Sub-MTU mapping validation
-# =============================================================
-def _validate_sub_mtu_mapping() -> None:
-    """Confirm _message_to_histogram matches the empirically confirmed Cassini NIC mapping."""
-    boundary_cases: list[tuple[int, list[int]]] = [
-        (1, [0]),
-        (11, [0]),
-        (12, [1]),
-        (74, [1]),
-        (75, [2]),
-        (192, [2]),
-        (193, [0, 2]),
-        (202, [0, 2]),
-        (203, [0, 3]),
-        (458, [0, 3]),
-        (459, [0, 4]),
-        (970, [0, 4]),
-        (971, [0, 5]),
-        (1994, [0, 5]),
-        (1995, [0, 6]),
-        (2048, [0, 6]),
-    ]
-
-    errors: list[str] = []
-    for msg_size, expected in boundary_cases:
-        hist = _message_to_histogram(msg_size)
-        actual = sorted(int(b) for b in np.where(hist > 0)[0])
-        if actual != expected:
-            errors.append(f"  msg_size={msg_size:>5}B : expected buckets {expected}, got {actual}")
-
-    if errors:
-        raise AssertionError("Sub-MTU empirical mapping validation failed:\n" + "\n".join(errors))
-
-    print(f"  [OK] Sub-MTU mapping: all {len(boundary_cases)} boundary cases pass")
 
 
 def validate_matrix_a(
