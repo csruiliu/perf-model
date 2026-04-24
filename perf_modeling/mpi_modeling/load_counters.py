@@ -61,7 +61,7 @@ def load_counters_single_job(counter_dir: str | Path) -> tuple[np.ndarray, list[
         node_name = node_dir.name
         node_names.append(node_name)
 
-        y_node, n_total = load_node_counters(node_dir / "cxi0" / "counters.csv")
+        y_node, n_total = load_counters_single_node(node_dir / "cxi0" / "counters.csv")
         vector_y[node_idx, :] = y_node
         total_messages[node_name] = n_total
 
@@ -80,7 +80,7 @@ def load_counters_single_job(counter_dir: str | Path) -> tuple[np.ndarray, list[
 # =============================================================
 # Single node loader
 # =============================================================
-def load_node_counters(counter_file: Path) -> np.ndarray:
+def load_counters_single_node(counter_file: Path) -> np.ndarray:
     """
     Load counters.csv for a single node.
 
