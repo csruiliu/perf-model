@@ -8,10 +8,10 @@ import argparse
 from pathlib import Path
 
 from build_matrix import build_matrix_a, validate_matrix_a
-from constants import MSG_SIZE_SETS, RDZV_THRESHOLD
+from constants import MSG_SIZE_SETS
 from load_counters import load_counters_single_job
 from solver import print_solution_summary, solve_global, validate_solution
-from time_estimator import compute_upper_bound_time, create_direct_lookup_model, fit_latency_model
+from time_estimator import compute_upper_bound_time, create_direct_lookup_model
 
 
 def main():
@@ -31,7 +31,7 @@ def main():
         help="Message size bin set: fine | coarse | pm (default: fine)",
     )
     parser.add_argument(
-        "--osu_latency_file",
+        "--latency_file",
         type=Path,
         default=None,
         help="Path to OSU latency benchmark output (e.g., osu_latency.txt)",
@@ -110,13 +110,9 @@ def main():
     print("Step 4: Estimate Communication Time Upper Bound")
     print("=" * 60)
 
-    # Choose the latency calculation method based on a command-line flag
-    if args.latency_method == "direct":
-        print("Using direct raw latency lookup...")
-        latency_model = create_direct_lookup_model(args.osu_latency_file)
-    else:
-        print("Using piecewise Hockney model fit...")
-        latency_model = fit_latency_model(args.osu_latency_file, rdzv_threshold=RDZV_THRESHOLD)
+    # Choose the latency calculation method
+    print("Using direct raw latency lookup...")
+    latency_model = create_direct_lookup_model(args.osu_latency_file)
 
     n_msg_sizes = len(msg_size_sets)
     x_send = vec_x[:, :n_msg_sizes]

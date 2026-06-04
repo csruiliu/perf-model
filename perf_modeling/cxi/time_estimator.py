@@ -29,47 +29,6 @@ def parse_osu_benchmark(filepath: str | Path) -> tuple[np.ndarray, np.ndarray]:
     return np.array(sizes, dtype=np.float64), np.array(values, dtype=np.float64)
 
 
-def fit_latency_model(
-    osu_filepath: str | Path, rdzv_threshold: int = 16384
-) -> Callable[[np.ndarray], np.ndarray]:
-    """Fits a piecewise Hockney model to the OSU latency data."""
-    sizes, latencies = parse_osu_benchmark(osu_filepath)
-    if len(sizes) == 0:
-        raise ValueError(f"Could not parse latency data from {osu_filepath}")
-
-    eager_mask = sizes <= rdzv_threshold
-    rdzv_mask = sizes > rdzv_threshold
-
-    sizes_eager, lat_eager = sizes[eager_mask], latencies[eager_mask]
-    sizes_rdzv, lat_rdzv = sizes[rdzv_mask], latencies[rdzv_mask]
-
-    if len(sizes_eager) > 1:
-        beta_eager, alpha_eager = np.polyfit(sizes_eager, lat_eager, 1)
-    else:
-        beta_eager, alpha_eager = 0.0, np.mean(lat_eager) if len(lat_eager) else 0.0
-
-    if len(sizes_rdzv) > 1:
-        beta_rdzv, alpha_rdzv = np.polyfit(sizes_rdzv, lat_rdzv, 1)
-    else:
-        beta_rdzv, alpha_rdzv = 0.0, np.mean(lat_rdzv) if len(lat_rdzv) else 0.0
-
-    print(
-        f"  [Latency Fit - Eager]      alpha: {alpha_eager:>6.3f} us,  beta: {beta_eager:.6f} us/B"
-    )
-    print(f"  [Latency Fit - Rendezvous] alpha: {alpha_rdzv:>6.3f} us,  beta: {beta_rdzv:.6f} us/B")
-
-    def predict_latency(msg_sizes_array: np.ndarray) -> np.ndarray:
-        predicted = np.zeros_like(msg_sizes_array, dtype=np.float64)
-        eager_idx = msg_sizes_array <= rdzv_threshold
-        rdzv_idx = msg_sizes_array > rdzv_threshold
-
-        predicted[eager_idx] = alpha_eager + beta_eager * msg_sizes_array[eager_idx]
-        predicted[rdzv_idx] = alpha_rdzv + beta_rdzv * msg_sizes_array[rdzv_idx]
-        return np.maximum(predicted, 0.0)
-
-    return predict_latency
-
-
 def create_direct_lookup_model(osu_filepath: str | Path) -> Callable[[np.ndarray], np.ndarray]:
     """Creates a direct lookup model for latency using linear interpolation."""
     sizes, latencies = parse_osu_benchmark(osu_filepath)
