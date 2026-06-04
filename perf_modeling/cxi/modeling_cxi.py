@@ -100,7 +100,7 @@ def main():
     # ----------------------------------------------------------
     # Step 4 — Estimate Communication Time Upper Bound
     # ----------------------------------------------------------
-    if not args.osu_latency_file or not args.osu_latency_file.exists():
+    if not args.latency_file or not args.latency_file.exists():
         print(
             "\n[INFO] No OSU latency file provided or founded — skipping Step 4 (time estimation)."
         )
@@ -112,7 +112,7 @@ def main():
 
     # Choose the latency calculation method
     print("Using direct raw latency lookup...")
-    latency_model = create_direct_lookup_model(args.osu_latency_file)
+    latency_model = create_direct_lookup_model(args.latency_file)
 
     n_msg_sizes = len(msg_size_sets)
     x_send = vec_x[:, :n_msg_sizes]

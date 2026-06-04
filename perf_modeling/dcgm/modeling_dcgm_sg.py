@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 from data_classes import MetricValues, TimeComponents, TimeSlice
 from hw_specs import GPU, GPUSpec, Host, HostSpec
-from job_processor import JobProcessor
+from job_processor import SingleJobProcessor
 from perf_calculators import (
     GPUScaleCalculator,
     HostScaleCalculator,
@@ -320,7 +320,7 @@ def main():
     args = parse_arguments()
 
     # Process metrics file for a job
-    job_processor = JobProcessor(1, args.metrics)
+    job_processor = SingleJobProcessor(1, args.metrics)
     profiled_df = job_processor.process_files(args.dcgm_file)
 
     # Create and run reference profiler
