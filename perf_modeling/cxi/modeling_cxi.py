@@ -11,13 +11,11 @@ from build_matrix import build_matrix_a, validate_matrix_a
 from constants import MSG_SIZE_SETS
 from load_counters import load_counters_single_job
 from solver import print_solution_summary, solve_global, validate_solution
-from time_estimator import compute_upper_bound_time, create_direct_lookup_model
+from time_estimator import create_direct_lookup_model, time_estimation
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="MPI Communication Profiler — hardware counter model"
-    )
+    parser = argparse.ArgumentParser(description="Communication Time Modeling Based on CXI")
 
     parser.add_argument(
         "--counter_dir",
@@ -34,15 +32,9 @@ def main():
         "--latency_file",
         type=Path,
         default=None,
-        help="Path to OSU latency benchmark output (e.g., osu_latency.txt)",
+        help="Path to OSU latency benchmark output (e.g., osu_latency.out)",
     )
-    parser.add_argument(
-        "--latency_method",
-        type=str,
-        choices=["fit", "direct"],
-        default="fit",
-        help="Choose 'fit' for the piecewise Hockney model or 'direct' for raw benchmark lookup",
-    )
+
     args = parser.parse_args()
 
     # Resolve message size set
@@ -58,9 +50,7 @@ def main():
 
     # Y has shape (num_nodes, 2 * NUM_ALL_CNTRS)
     # The first NUM_ALL_CNTRS columns are TX counters and the next NUM_ALL_CNTRS columns are RX counters
-    y_for_solver, node_names, node_send_msgs, node_recv_msgs = load_counters_single_job(
-        args.counter_dir
-    )
+    y_solver, n_names, node_send_msgs, node_recv_msgs = load_counters_single_job(args.counter_dir)
     # ----------------------------------------------------------
     # Step 2 — Build signature matrix A
     # ----------------------------------------------------------
@@ -87,15 +77,15 @@ def main():
 
     # X's shape is (num_nodes, 2 * num_msg_size_bins)
     vec_x, lambdas_used = solve_global(
-        matrix_a, y_for_solver, node_names, msg_size_sets, node_send_msgs, node_recv_msgs
+        matrix_a, y_solver, n_names, msg_size_sets, node_send_msgs, node_recv_msgs
     )
 
     print_solution_summary(
-        node_names, lambdas_used, vec_x, msg_size_sets, node_send_msgs, node_recv_msgs
+        n_names, lambdas_used, vec_x, msg_size_sets, node_send_msgs, node_recv_msgs
     )
 
     # Validate that predicted counters match observed counters
-    validate_solution(matrix_a, y_for_solver, vec_x, node_names, rel_tol=0.05)
+    validate_solution(matrix_a, y_solver, vec_x, n_names, rel_tol=0.05)
 
     # ----------------------------------------------------------
     # Step 4 — Estimate Communication Time Upper Bound
@@ -118,14 +108,11 @@ def main():
     x_send = vec_x[:, :n_msg_sizes]
     x_recv = vec_x[:, n_msg_sizes:]
 
-    # current only consider latency and placeholder for gap model
-    gap_model = None
-
-    overlap_time_us, sequential_time_us, heaviest_node_idx = compute_upper_bound_time(
-        x_send, x_recv, msg_size_sets, latency_model, gap_model
+    overlap_time_us, sequential_time_us, heaviest_node_idx = time_estimation(
+        x_send, x_recv, msg_size_sets, latency_model
     )
 
-    heaviest_node_name = node_names[heaviest_node_idx] if node_names else str(heaviest_node_idx)
+    heaviest_node_name = n_names[heaviest_node_idx] if n_names else str(heaviest_node_idx)
 
     print("\n  === Time Estimation Results ===")
     print(f"  Heaviest communicating node : {heaviest_node_name}")

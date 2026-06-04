@@ -111,23 +111,17 @@ def create_direct_gap_model(osu_bw_filepath: str | Path) -> Callable[[np.ndarray
     return predict_gap
 
 
-def compute_upper_bound_time(
+def time_estimation(
     x_send: np.ndarray,
     x_recv: np.ndarray,
     msg_sizes: np.ndarray,
     latency_model: Callable[[np.ndarray], np.ndarray],
-    gap_model: Callable[[np.ndarray], np.ndarray] | None = None,
 ) -> tuple[float, float, int]:
     """
     Computes theoretical communication time evaluating both sparse latency constraints
     and dense injection gap constraints.
     """
     bin_latencies = latency_model(msg_sizes)
-
-    if gap_model is not None:
-        bin_gaps = gap_model(msg_sizes)
-    else:
-        bin_gaps = np.zeros_like(bin_latencies)
 
     x_send_2d = np.atleast_2d(x_send)
     x_recv_2d = np.atleast_2d(x_recv)
@@ -137,8 +131,7 @@ def compute_upper_bound_time(
 
     for n in range(num_nodes):
         latency_bound = np.sum((x_send_2d[n, :] + x_recv_2d[n, :]) * bin_latencies)
-        gap_bound = np.sum((x_send_2d[n, :] + x_recv_2d[n, :]) * bin_gaps)
-        node_times[n] = max(latency_bound, gap_bound)
+        node_times[n] = latency_bound
 
     overlap_time = np.max(node_times)
     sequential_time = np.sum(node_times)
