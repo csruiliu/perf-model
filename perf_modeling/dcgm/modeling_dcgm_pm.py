@@ -1,7 +1,7 @@
 import argparse
 
 from hw_specs import GPUSpec
-from workload_processor import WorkloadProcessor
+from job_processor import MultiJobProcessor
 
 # ============================================================================
 # COMMAND LINE INTERFACE
@@ -15,11 +15,7 @@ def main():
     )
 
     parser.add_argument(
-        "-rg",
-        "--ref_gpu",
-        required=True,
-        choices=list(GPUSpec.keys()),
-        help="Reference GPU",
+        "-rg", "--ref_gpu", required=True, choices=list(GPUSpec.keys()), help="Reference GPU"
     )
     parser.add_argument(
         "-tg", "--tgt_gpu", choices=list(GPUSpec.keys()), help="Target GPU (optional)"
@@ -64,7 +60,7 @@ def main():
 
     args = parser.parse_args()
 
-    workload_processor = WorkloadProcessor(
+    workload_processor = MultiJobProcessor(
         args.workload_metadata_file,
         args.workload_data_path,
         args.max_workers,

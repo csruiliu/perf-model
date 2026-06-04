@@ -6,7 +6,7 @@ import pandas as pd
 from data_classes import MetricValues, TimeComponents, TimeSlice
 from hw_specs import GPU, GPUSpec, Host, HostSpec
 from job_processor import JobProcessor
-from performance_calculators import (
+from perf_calculators import (
     GPUScaleCalculator,
     HostScaleCalculator,
     MetricIntensityCalculator,
@@ -62,9 +62,7 @@ class ReferenceProfiler(BaseProfiler):
         membw = self._calc_membw(time_slice.slice_dataframe(profiled_df), metrics)
 
         # Print results
-        self.formatter.print_reference_results(
-            sliced, flops, membw, self.gpu.get_name()
-        )
+        self.formatter.print_reference_results(sliced, flops, membw, self.gpu.get_name())
 
     def _calc_all_components(
         self, profiled_df: pd.DataFrame, metrics: list[str]
@@ -88,8 +86,7 @@ class ReferenceProfiler(BaseProfiler):
 
         # Add total time
         sliced["t_total"] = [
-            sliced["t_kernel"][i] + sliced["t_othernode"][i]
-            for i in range(len(sliced["t_kernel"]))
+            sliced["t_kernel"][i] + sliced["t_othernode"][i] for i in range(len(sliced["t_kernel"]))
         ]
 
         return sliced
@@ -137,12 +134,7 @@ class TargetPredictor(BaseProfiler):
     SMOCC_LEVELS = ["lower", "mid", "upper", "mock"]
 
     def __init__(
-        self,
-        sample_interval_ms,
-        ref_gpu_name,
-        tgt_gpu_name,
-        ref_host_name,
-        tgt_host_name,
+        self, sample_interval_ms, ref_gpu_name, tgt_gpu_name, ref_host_name, tgt_host_name
     ):
         self.ref_gpu = GPU(gpu_name=ref_gpu_name)
         self.tgt_gpu = GPU(gpu_name=tgt_gpu_name)
@@ -185,11 +177,7 @@ class TargetPredictor(BaseProfiler):
 
         metric_types = ["t_kernel", "t_total", "total_dram_tgt", "total_flop_tgt"]
 
-        results = {
-            f"{metric}_{key}": []
-            for metric in metric_types
-            for key in self.SMOCC_LEVELS
-        }
+        results = {f"{metric}_{key}": [] for metric in metric_types for key in self.SMOCC_LEVELS}
 
         results["t_othernode"] = []
         results["t_pcie"] = []
@@ -212,18 +200,15 @@ class TargetPredictor(BaseProfiler):
 
             # Update SMOCC and calculate all scales
             gpu_scale_calc.update_smocc(intensities["smocc_gract"])
-            all_scales = self._calculate_all_scales(
-                gpu_scale_calc, intensities, tf_weights
-            )
+            all_scales = self._calculate_all_scales(gpu_scale_calc, intensities, tf_weights)
 
             # PCIe Time
             t_pcie_tgt = ref_components.t_pcie / gpu_scale_calc.pcie_scale()
             results["t_pcie"].append(t_pcie_tgt)
 
             # Other node time
-            t_othernode_tgt = (
-                ref_components.t_othernode
-                / host_scale_calc.othernode_scale(cores_alloc)
+            t_othernode_tgt = ref_components.t_othernode / host_scale_calc.othernode_scale(
+                cores_alloc
             )
             results["t_othernode"].append(t_othernode_tgt)
 
@@ -246,9 +231,7 @@ class TargetPredictor(BaseProfiler):
                 # Calculate kernel and total time
                 t_kernel_tgt = ref_components.t_kernel / kernel_scale
                 results[f"t_kernel_{key}"].append(t_kernel_tgt)
-                results[f"t_total_{key}"].append(
-                    t_kernel_tgt + t_pcie_tgt + t_othernode_tgt
-                )
+                results[f"t_total_{key}"].append(t_kernel_tgt + t_pcie_tgt + t_othernode_tgt)
 
         return results
 
@@ -259,9 +242,7 @@ class TargetPredictor(BaseProfiler):
         # scale_calc.smocc_scale() need to be invoked first
         return {
             "dram": scale_calc.dram_scale(intensities["drama_gract"]),
-            "tensor": scale_calc.tensor_scale_weighted(
-                intensities["tenso_gract"], tf_weights
-            ),
+            "tensor": scale_calc.tensor_scale_weighted(intensities["tenso_gract"], tf_weights),
             "fp64": scale_calc.fp64_scale(intensities["fp64a_gract"]),
             "fp32": scale_calc.fp32_scale(intensities["fp32a_gract"]),
             "fp16": scale_calc.fp16_scale(intensities["fp16a_gract"]),
@@ -284,9 +265,7 @@ def parse_arguments() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    parser.add_argument(
-        "-f", "--dcgm_file", required=True, help="DCGM output file path"
-    )
+    parser.add_argument("-f", "--dcgm_file", required=True, help="DCGM output file path")
     parser.add_argument(
         "-d",
         "--sample_interval_ms",
@@ -295,18 +274,10 @@ def parse_arguments() -> argparse.Namespace:
         help="Sample interval in milliseconds",
     )
     parser.add_argument(
-        "-st",
-        "--start_timestamp",
-        type=int,
-        default=0,
-        help="Start timestamp (ms, default: 0)",
+        "-st", "--start_timestamp", type=int, default=0, help="Start timestamp (ms, default: 0)"
     )
     parser.add_argument(
-        "-et",
-        "--end_timestamp",
-        type=int,
-        default=None,
-        help="End timestamp (ms, default: None)",
+        "-et", "--end_timestamp", type=int, default=None, help="End timestamp (ms, default: None)"
     )
     parser.add_argument(
         "-o",
@@ -316,27 +287,16 @@ def parse_arguments() -> argparse.Namespace:
         help="Overall runtime in milliseconds",
     )
     parser.add_argument(
-        "-rg",
-        "--ref_gpu",
-        required=True,
-        choices=list(GPUSpec.keys()),
-        help="Reference GPU",
+        "-rg", "--ref_gpu", required=True, choices=list(GPUSpec.keys()), help="Reference GPU"
     )
     parser.add_argument(
         "-tg", "--tgt_gpu", choices=list(GPUSpec.keys()), help="Target Host (optional)"
     )
     parser.add_argument(
-        "-rh",
-        "--ref_host",
-        required=True,
-        choices=list(HostSpec.keys()),
-        help="Reference Host",
+        "-rh", "--ref_host", required=True, choices=list(HostSpec.keys()), help="Reference Host"
     )
     parser.add_argument(
-        "-th",
-        "--tgt_host",
-        choices=list(HostSpec.keys()),
-        help="Target Host (optional)",
+        "-th", "--tgt_host", choices=list(HostSpec.keys()), help="Target Host (optional)"
     )
     parser.add_argument(
         "-ca",
@@ -366,21 +326,13 @@ def main():
     # Create and run reference profiler
     ref_profiler = ReferenceProfiler(args.sample_interval_ms, args.ref_gpu)
     ref_profiler.run(
-        profiled_df,
-        args.metrics,
-        args.overall_runtime_ms,
-        args.start_timestamp,
-        args.end_timestamp,
+        profiled_df, args.metrics, args.overall_runtime_ms, args.start_timestamp, args.end_timestamp
     )
 
     # Create target predictor and run if specified
     if args.tgt_gpu:
         tgt_predictor = TargetPredictor(
-            args.sample_interval_ms,
-            args.ref_gpu,
-            args.tgt_gpu,
-            args.ref_host,
-            args.tgt_host,
+            args.sample_interval_ms, args.ref_gpu, args.tgt_gpu, args.ref_host, args.tgt_host
         )
         tgt_predictor.run(
             profiled_df,

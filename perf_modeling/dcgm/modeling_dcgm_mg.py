@@ -5,12 +5,8 @@ import numpy as np
 import pandas as pd
 from data_classes import MetricValues, TimeComponents, TimeSlice
 from hw_specs import GPU, GPUSpec
-from job_processor import JobProcessor
-from performance_calculators import (
-    MetricIntensityCalculator,
-    ScaleCalculator,
-    TimeCalculator,
-)
+from job_processor import SingleJobProcessor
+from perf_calculators import MetricIntensityCalculator, ScaleCalculator, TimeCalculator
 from utils import ResultsFormatter
 
 
@@ -149,18 +145,12 @@ class ReferenceProfiler(BaseProfiler):
     def _calc_flops(self, sliced: dict[str, list[float]], tensor_prec: str) -> float:
         """Calculate FLOPS"""
         return (
-            np.mean(sliced["t_flop"])
-            / self.time_calc.sample_intv
-            * self.gpu.get_specs(tensor_prec)
+            np.mean(sliced["t_flop"]) / self.time_calc.sample_intv * self.gpu.get_specs(tensor_prec)
         )
 
     def _calc_mem_bw(self, sliced: dict[str, list[float]]) -> float:
         """Calculate memory bandwidth"""
-        return (
-            np.mean(sliced["t_dram"])
-            / self.time_calc.sample_intv
-            * self.gpu.get_specs("mem_bw")
-        )
+        return np.mean(sliced["t_dram"]) / self.time_calc.sample_intv * self.gpu.get_specs("mem_bw")
 
 
 class TargetPredictor(BaseProfiler):
@@ -275,40 +265,20 @@ class TargetPredictor(BaseProfiler):
 
             # Calculate kernel scales
             smocc_lower, smocc_mid, smocc_upper = scale_calc.smocc_scale()
-            dram_lower, dram_mid, dram_upper = scale_calc.dram_scale(
-                intensities["drama_gract"]
-            )
+            dram_lower, dram_mid, dram_upper = scale_calc.dram_scale(intensities["drama_gract"])
             tensor_lower, tensor_mid, tensor_upper = scale_calc.tensor_scale(
                 intensities["tenso_gract"]
             )
-            fp64_lower, fp64_mid, fp64_upper = scale_calc.fp64_scale(
-                intensities["fp64a_gract"]
-            )
-            fp32_lower, fp32_mid, fp32_upper = scale_calc.fp32_scale(
-                intensities["fp32a_gract"]
-            )
-            fp16_lower, fp16_mid, fp16_upper = scale_calc.fp16_scale(
-                intensities["fp16a_gract"]
-            )
+            fp64_lower, fp64_mid, fp64_upper = scale_calc.fp64_scale(intensities["fp64a_gract"])
+            fp32_lower, fp32_mid, fp32_upper = scale_calc.fp32_scale(intensities["fp32a_gract"])
+            fp16_lower, fp16_mid, fp16_upper = scale_calc.fp16_scale(intensities["fp16a_gract"])
 
             kernel_scale_lower = min(
-                smocc_lower,
-                dram_lower,
-                tensor_lower,
-                fp64_lower,
-                fp32_lower,
-                fp16_lower,
+                smocc_lower, dram_lower, tensor_lower, fp64_lower, fp32_lower, fp16_lower
             )
-            kernel_scale_mid = min(
-                smocc_mid, dram_mid, tensor_mid, fp64_mid, fp32_mid, fp16_mid
-            )
+            kernel_scale_mid = min(smocc_mid, dram_mid, tensor_mid, fp64_mid, fp32_mid, fp16_mid)
             kernel_scale_upper = min(
-                smocc_upper,
-                dram_upper,
-                tensor_upper,
-                fp64_upper,
-                fp32_upper,
-                fp16_upper,
+                smocc_upper, dram_upper, tensor_upper, fp64_upper, fp32_upper, fp16_upper
             )
 
             # Calculate kernel times for each scenario
@@ -325,9 +295,7 @@ class TargetPredictor(BaseProfiler):
             nvlink_scale = scale_calc.nvlink_scale()
 
             t_pcie = ref_components.t_pcie / pcie_scale if pcie_scale != 0 else 0
-            t_nvlink = (
-                ref_components.t_nvlink / nvlink_scale if nvlink_scale != 0 else 0
-            )
+            t_nvlink = ref_components.t_nvlink / nvlink_scale if nvlink_scale != 0 else 0
 
             results["t_pcie"].append(t_pcie)
             results["t_nvlink"].append(t_nvlink)
@@ -377,13 +345,10 @@ class TargetPredictor(BaseProfiler):
 
         return aggregated
 
-    def _calc_est_flops(
-        self, sliced_metrics: dict[str, list[float]], tensor_prec: str
-    ) -> float:
+    def _calc_est_flops(self, sliced_metrics: dict[str, list[float]], tensor_prec: str) -> float:
         """Calculate estimated FLOPS"""
         return (
-            np.mean(sliced_metrics.get("tensor_ref"))
-            * self.tgt_gpu.get_specs(tensor_prec)
+            np.mean(sliced_metrics.get("tensor_ref")) * self.tgt_gpu.get_specs(tensor_prec)
             + np.mean(sliced_metrics.get("fp64a_ref")) * self.tgt_gpu.get_specs("fp64")
             + np.mean(sliced_metrics.get("fp32a_ref")) * self.tgt_gpu.get_specs("fp32")
             + np.mean(sliced_metrics.get("fp16a_ref")) * self.tgt_gpu.get_specs("fp16")
@@ -391,9 +356,7 @@ class TargetPredictor(BaseProfiler):
 
     def _calc_est_mem_bw(self, sliced_metrics: dict[str, list[float]]) -> float:
         """Calculate estimated memory bandwidth"""
-        return np.mean(sliced_metrics.get("drama_ref")) * self.tgt_gpu.get_specs(
-            "mem_bw"
-        )
+        return np.mean(sliced_metrics.get("drama_ref")) * self.tgt_gpu.get_specs("mem_bw")
 
 
 def parse_arguments() -> argparse.Namespace:
@@ -403,12 +366,8 @@ def parse_arguments() -> argparse.Namespace:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
 
-    parser.add_argument(
-        "-f", "--dcgm_input", required=True, help="DCGM input: file or folder path"
-    )
-    parser.add_argument(
-        "-n", "--num_gpu", type=int, required=True, help="Number of GPUs"
-    )
+    parser.add_argument("-f", "--dcgm_input", required=True, help="DCGM input: file or folder path")
+    parser.add_argument("-n", "--num_gpu", type=int, required=True, help="Number of GPUs")
     parser.add_argument(
         "-d",
         "--sample_interval_ms",
@@ -424,18 +383,10 @@ def parse_arguments() -> argparse.Namespace:
         help="Aggregation interval in milliseconds",
     )
     parser.add_argument(
-        "-st",
-        "--start_timestamp",
-        type=int,
-        default=0,
-        help="Start timestamp (ms, default: 0)",
+        "-st", "--start_timestamp", type=int, default=0, help="Start timestamp (ms, default: 0)"
     )
     parser.add_argument(
-        "-et",
-        "--end_timestamp",
-        type=int,
-        default=None,
-        help="End timestamp (ms, default: None)",
+        "-et", "--end_timestamp", type=int, default=None, help="End timestamp (ms, default: None)"
     )
     parser.add_argument(
         "-o",
@@ -445,11 +396,7 @@ def parse_arguments() -> argparse.Namespace:
         help="Overall runtime in milliseconds",
     )
     parser.add_argument(
-        "-rg",
-        "--ref_gpu",
-        required=True,
-        choices=list(GPUSpec.keys()),
-        help="Reference GPU",
+        "-rg", "--ref_gpu", required=True, choices=list(GPUSpec.keys()), help="Reference GPU"
     )
     parser.add_argument(
         "-tg", "--tgt_gpu", choices=list(GPUSpec.keys()), help="Target GPU (optional)"
@@ -475,7 +422,7 @@ def main():
     args = parse_arguments()
 
     # Process metrics file for multiple jobs
-    job_processor = JobProcessor(args.num_gpu, args.metrics)
+    job_processor = SingleJobProcessor(args.num_gpu, args.metrics)
     gpu_dfs = job_processor.process_files(args.dcgm_input)
 
     print(f"\nProcessed {len(gpu_dfs)} GPUs")
@@ -496,9 +443,7 @@ def main():
 
     # Create target predictor and run if specified
     if args.tgt_gpu:
-        tgt_predictor = TargetPredictor(
-            args.sample_interval_ms, args.ref_gpu, args.tgt_gpu
-        )
+        tgt_predictor = TargetPredictor(args.sample_interval_ms, args.ref_gpu, args.tgt_gpu)
         tgt_predictor.run(
             gpu_dfs,
             args.metrics,
