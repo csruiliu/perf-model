@@ -76,6 +76,7 @@ def load_counters_single_job(counter_dir: str | Path) -> tuple[np.ndarray, list[
                 t for key, t in node_recv_msgs.items() if key != node_name and t is not None
             ]
             if len(other_totals) > 0:
+                # avg num of recv msgs of other nodes as the estimated num of sent msgs
                 n_send = sum(other_totals) / (num_nodes - 1)
             else:
                 raise ValueError("Cannot get n_send using other node reeciving messages!")
