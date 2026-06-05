@@ -1,7 +1,7 @@
 """
-mpi_modeling.py
+modeling_cxi.py
 
-Full pipeline entry point for the MPI communication model.
+Full pipeline for the network time model.
 """
 
 import argparse
