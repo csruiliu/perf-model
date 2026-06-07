@@ -4,6 +4,7 @@ time_estimator.py
 
 from collections.abc import Callable
 from pathlib import Path
+from hw_config.hw_specs import Host
 
 import numpy as np
 
@@ -116,6 +117,7 @@ def time_estimation(
     x_recv: np.ndarray,
     msg_sizes: np.ndarray,
     latency_model: Callable[[np.ndarray], np.ndarray],
+    ref_host_name: str
 ) -> tuple[float, float, int]:
     """
     Computes theoretical communication time evaluating both sparse latency constraints
@@ -127,11 +129,19 @@ def time_estimation(
     x_recv_2d = np.atleast_2d(x_recv)
 
     num_nodes = x_send_2d.shape[0]
-    node_times = np.zeros(num_nodes)
+    node_times_parallelism = np.zeros(num_nodes)
+    node_times_sequential = np.zeros(num_nodes)
 
-    for n in range(num_nodes):
-        latency_bound = np.sum((x_send_2d[n, :] + x_recv_2d[n, :]) * bin_latencies)
-        node_times[n] = latency_bound
+    ref_host = Host(host_name=ref_host_name)
+    ref_host_bisect_bw = ref_host.get_specs("mem_bw") / 2
+
+    for nidx in range(num_nodes):
+        node_times_parallelism[nidx] = np.max(
+            x_send_2d[nidx, :] * bin_latencies, x_recv_2d[nidx, :] * bin_latencies
+        )
+        node_times_sequential[nidx] = 
+        latency_bound = np.sum((x_send_2d[nidx, :] + x_recv_2d[nidx, :]) * bin_latencies)
+        node_times[nidx] = latency_bound
 
     overlap_time = np.max(node_times)
     sequential_time = np.sum(node_times)

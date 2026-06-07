@@ -1,6 +1,6 @@
 import argparse
 
-from hw_specs import GPUSpec
+from hw_config.hw_specs import GPUSpec
 from job_processor import MultiJobProcessor
 
 # ============================================================================

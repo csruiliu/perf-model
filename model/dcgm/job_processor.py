@@ -10,8 +10,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from hw_specs import GPU
-from pm_config import nodes_80gb_set
+from hw_config.hw_specs import GPU
+from hw_config.pm_config import nodes_80gb_set
 
 
 class SingleJobProcessor:

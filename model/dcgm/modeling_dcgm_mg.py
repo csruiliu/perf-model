@@ -3,8 +3,8 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import pandas as pd
-from data_classes import MetricValues, TimeComponents, TimeSlice
-from hw_specs import GPU, GPUSpec
+from gpu_metrics import MetricValues, TimeComponents, TimeSlice
+from hw_config.hw_specs import GPU, GPUSpec
 from job_processor import SingleJobProcessor
 from perf_calculators import MetricIntensityCalculator, ScaleCalculator, TimeCalculator
 from utils import ResultsFormatter

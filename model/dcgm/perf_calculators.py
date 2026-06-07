@@ -1,6 +1,6 @@
 import numpy as np
-from data_classes import MetricValues, TimeComponents, TimeSlice
-from hw_specs import GPU, Host
+from gpu_metrics import MetricValues, TimeComponents, TimeSlice
+from hw_config.hw_specs import GPU, Host
 
 
 class MetricIntensityCalculator:
@@ -91,9 +91,7 @@ class TimeCalculator:
         data_length: int,
     ) -> TimeSlice:
         """Calculate time slice indices"""
-        finish_idx = min(
-            int(overall_runtime_ms / (self.sample_intv * 1000)), data_length
-        )
+        finish_idx = min(int(overall_runtime_ms / (self.sample_intv * 1000)), data_length)
         start_idx = int((start_ts or 0) / (self.sample_intv * 1000))
 
         if end_ts is not None:
@@ -116,16 +114,10 @@ class HostScaleCalculator:
 
     def _precompute_common_ratios(self):
         cpu_clock_ratio_mid_ref = np.mean(
-            [
-                self.ref_host.get_specs("cpu_clock_base"),
-                self.ref_host.get_specs("cpu_clock_boost"),
-            ]
+            [self.ref_host.get_specs("cpu_clock_base"), self.ref_host.get_specs("cpu_clock_boost")]
         )
         cpu_clock_ratio_mid_tgt = np.mean(
-            [
-                self.tgt_host.get_specs("cpu_clock_base"),
-                self.tgt_host.get_specs("cpu_clock_boost"),
-            ]
+            [self.tgt_host.get_specs("cpu_clock_base"), self.tgt_host.get_specs("cpu_clock_boost")]
         )
         self.cpu_clock_ratio = cpu_clock_ratio_mid_tgt / cpu_clock_ratio_mid_ref
 
@@ -188,9 +180,7 @@ class GPUScaleCalculator:
         return self.tgt_gpu.get_specs(spec) / self.ref_gpu.get_specs(spec)
 
     def _estimate_warps(self):
-        self.cur_warps_ref = min(
-            self.cur_smocc * self.ref_max_warps, self.ref_max_warps
-        )
+        self.cur_warps_ref = min(self.cur_smocc * self.ref_max_warps, self.ref_max_warps)
 
         self.cur_warps_tgt["lower"] = min(
             self.cur_warps_ref * self.reg_sm_limit,
@@ -199,15 +189,11 @@ class GPUScaleCalculator:
         )
 
         self.cur_warps_tgt["mid"] = min(
-            self.cur_warps_ref * (self.reg_sm_limit + self.shmem_sm_limit) * 0.5,
-            self.tgt_max_warps,
+            self.cur_warps_ref * (self.reg_sm_limit + self.shmem_sm_limit) * 0.5, self.tgt_max_warps
         )
 
         self.cur_warps_tgt["upper"] = min(
-            max(
-                self.cur_warps_ref * self.reg_sm_limit,
-                self.cur_warps_ref * self.shmem_sm_limit,
-            ),
+            max(self.cur_warps_ref * self.reg_sm_limit, self.cur_warps_ref * self.shmem_sm_limit),
             self.tgt_max_warps,
         )
         self.cur_warps_tgt["mock"] = self.cur_warps_ref
@@ -226,8 +212,7 @@ class GPUScaleCalculator:
 
         scale_factor = ratio / intensity_ref
         return tuple(
-            min(self.scale_smocc[key], scale_factor)
-            for key in ("lower", "mid", "upper", "mock")
+            min(self.scale_smocc[key], scale_factor) for key in ("lower", "mid", "upper", "mock")
         )
 
     def update_smocc(self, smocc: float):
@@ -247,12 +232,10 @@ class GPUScaleCalculator:
     ) -> tuple[float, float, float, float]:
         """Calculate weighted tensor core scaling factors"""
         tf_tgt = sum(
-            weights[prec] * self.tgt_gpu.get_specs(prec)
-            for prec in ["tf64", "tf32", "tf16"]
+            weights[prec] * self.tgt_gpu.get_specs(prec) for prec in ["tf64", "tf32", "tf16"]
         )
         tf_ref = sum(
-            weights[prec] * self.ref_gpu.get_specs(prec)
-            for prec in ["tf64", "tf32", "tf16"]
+            weights[prec] * self.ref_gpu.get_specs(prec) for prec in ["tf64", "tf32", "tf16"]
         )
 
         return self._compute_scale(tensor_ref, tf_tgt / tf_ref)
@@ -270,17 +253,13 @@ class GPUScaleCalculator:
             return np.inf, np.inf, np.inf, np.inf
 
         scale_factor = self.bw_ratio / intensities["drama_gract"]
-        l2_cache_ratio = self.tgt_gpu.get_specs("l2_cache") / self.ref_gpu.get_specs(
-            "l2_cache"
-        )
+        l2_cache_ratio = self.tgt_gpu.get_specs("l2_cache") / self.ref_gpu.get_specs("l2_cache")
 
         def calculate_lambda_factor(key):
             l_factor = 1 / (1 - intensities["smocc_gract"] * (l2_cache_ratio - 1))
             return min(self.scale_smocc[key], scale_factor) * l_factor
 
-        return tuple(
-            calculate_lambda_factor(key) for key in ["lower", "mid", "upper", "mock"]
-        )
+        return tuple(calculate_lambda_factor(key) for key in ["lower", "mid", "upper", "mock"])
 
     def fp64_scale(self, fp64_ref: float) -> tuple[float, float, float, float]:
         """Calculate FP64 scaling factors"""
@@ -295,10 +274,7 @@ class GPUScaleCalculator:
         return self._compute_scale(fp16_ref, self.fp16_ratio)
 
     def est_flop_tgt(
-        self,
-        tf_weights: dict[str, float],
-        intensities: dict[str, float],
-        smocc_scale: float,
+        self, tf_weights: dict[str, float], intensities: dict[str, float], smocc_scale: float
     ) -> tuple[float, float, float, float]:
         # Compute tf_tgt once
         tf_tgt = (

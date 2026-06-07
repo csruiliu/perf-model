@@ -9,6 +9,7 @@ from pathlib import Path
 
 from build_matrix import build_matrix_a, validate_matrix_a
 from constants import MSG_SIZE_SETS
+from hw_config.hw_specs import HostSpec
 from load_counters import load_counters_single_job
 from solver import print_solution_summary, solve_global, validate_solution
 from time_estimator import create_direct_lookup_model, time_estimation
@@ -20,19 +21,33 @@ def main():
     parser.add_argument(
         "--counter_dir",
         type=Path,
+        required=True,
         help="One SLURM job directories with collected counters (OMB_<job_id>)",
     )
+
     parser.add_argument(
         "--msg_set",
         default="fine",
+        type=str,
+        required=True,
         choices=list(MSG_SIZE_SETS.keys()),
         help="Message size bin set: fine | coarse | pm (default: fine)",
     )
+
     parser.add_argument(
         "--latency_file",
         type=Path,
         default=None,
         help="Path to OSU latency benchmark output (e.g., osu_latency.out)",
+    )
+
+    parser.add_argument(
+        "-rh",
+        "--ref_host",
+        type=str,
+        required=True,
+        choices=list(HostSpec.keys()),
+        help="Reference Host",
     )
 
     args = parser.parse_args()
@@ -109,7 +124,7 @@ def main():
     x_recv = vec_x[:, n_msg_sizes:]
 
     overlap_time_us, sequential_time_us, heaviest_node_idx = time_estimation(
-        x_send, x_recv, msg_size_sets, latency_model
+        x_send, x_recv, msg_size_sets, latency_model, args.ref_host
     )
 
     heaviest_node_name = n_names[heaviest_node_idx] if n_names else str(heaviest_node_idx)

@@ -30,10 +30,10 @@ class MetricValues:
             fp32a=getattr(row, "FP32A", 0.0) if "FP32A" in metrics else 0.0,
             fp16a=getattr(row, "FP16A", 0.0) if "FP16A" in metrics else 0.0,
             smocc=getattr(row, "SMOCC", 0.0) if "SMOCC" in metrics else 0.0,
-            pcitx=getattr(row, "PCITX", 0.0) if "SMOCC" in metrics else 0.0,
-            pcirx=getattr(row, "PCIRX", 0.0) if "SMOCC" in metrics else 0.0,
-            nvltx=getattr(row, "NVLTX", 0.0) if "SMOCC" in metrics else 0.0,
-            nvlrx=getattr(row, "NVLRX", 0.0) if "SMOCC" in metrics else 0.0,
+            pcitx=getattr(row, "PCITX", 0.0) if "PCITX" in metrics else 0.0,
+            pcirx=getattr(row, "PCIRX", 0.0) if "PCIRX" in metrics else 0.0,
+            nvltx=getattr(row, "NVLTX", 0.0) if "NVLTX" in metrics else 0.0,
+            nvlrx=getattr(row, "NVLRX", 0.0) if "NVLRX" in metrics else 0.0,
         )
 
     def get_flop_sum(self) -> float:
@@ -77,9 +77,7 @@ class TimeSlice:
 
     def slice_dict(self, data: dict[str, list]) -> dict[str, list]:
         """Apply slicing to all lists in a dictionary"""
-        return {
-            key: values[self.start_idx : self.end_idx] for key, values in data.items()
-        }
+        return {key: values[self.start_idx : self.end_idx] for key, values in data.items()}
 
     def slice_dataframe(self, data: pd.DataFrame) -> pd.DataFrame:
         """Apply slicing to a list"""
