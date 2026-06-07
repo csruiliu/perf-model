@@ -58,7 +58,8 @@ GPUSpec = {
 
 HostSpec = {
     "Perlmutter": {
-        "cpu_clock_base": 2.45, "cpu_clock_boost": 3.5, "cpu_cores": 64, "mem_bw": 204.8, "pcie": 32
+        "cpu_clock_base": 2.45, "cpu_clock_boost": 3.5, "cpu_cores": 64, "mem_bw": 204.8, "pcie": 32,
+        "network_bw": 25
     },
     "Einsteinium-H100": {
         "cpu_clock_base": 2, "cpu_clock_boost": 3.8, "cpu_cores": 112, "mem_bw": 307.2, "pcie": 32
