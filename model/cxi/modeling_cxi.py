@@ -123,14 +123,11 @@ def main():
     x_send = vec_x[:, :n_msg_sizes]
     x_recv = vec_x[:, n_msg_sizes:]
 
-    overlap_time_us, sequential_time_us, heaviest_node_idx = time_estimation(
+    overlap_time_us, sequential_time_us = time_estimation(
         x_send, x_recv, msg_size_sets, latency_model, args.ref_host
     )
 
-    heaviest_node_name = n_names[heaviest_node_idx] if n_names else str(heaviest_node_idx)
-
     print("\n  === Time Estimation Results ===")
-    print(f"  Heaviest communicating node : {heaviest_node_name}")
     print(f"  Overlap mode (Max node time): {overlap_time_us / 1e6:.4f} seconds")
     print(f"  Sequential mode (Total time): {sequential_time_us / 1e6:.4f} seconds")
 

@@ -4,9 +4,9 @@ time_estimator.py
 
 from collections.abc import Callable
 from pathlib import Path
-from hw_config.hw_specs import Host
 
 import numpy as np
+from hw_config.hw_specs import Host
 
 
 def parse_osu_benchmark(filepath: str | Path) -> tuple[np.ndarray, np.ndarray]:
@@ -117,34 +117,68 @@ def time_estimation(
     x_recv: np.ndarray,
     msg_sizes: np.ndarray,
     latency_model: Callable[[np.ndarray], np.ndarray],
-    ref_host_name: str
-) -> tuple[float, float, int]:
+    ref_host_name: str,
+) -> tuple[float, float]:
     """
-    Computes theoretical communication time evaluating both sparse latency constraints
-    and dense injection gap constraints.
+    Estimate communication time bounds for a node-level message pattern.
+
+    Returns two values:
+      - overlap_time:    Theoretical *lower bound* on time, assuming all messages
+                         are launched simultaneously with perfect overlap.
+      - sequential_time: Reference time assuming no overlap (every message's
+                         latency summed), i.e. the fully-serialized case.
+
+    Model assumptions:
+      - Network is a FULL-BISECTION FAT TREE
+      - Links are FULL-DUPLEX: send and receive flow concurrently and do not
+        compete, so the bandwidth floor uses max(send, recv).
+      - This is a lower bound only, it does NOT capture endpoint contention
+        (e.g. incast / many-to-one).
     """
+
+    # Per-message wire latency for each message-size bin.
     bin_latencies = latency_model(msg_sizes)
 
+    # Ensure 2D so rows = nodes, columns = size bins.
     x_send_2d = np.atleast_2d(x_send)
     x_recv_2d = np.atleast_2d(x_recv)
 
     num_nodes = x_send_2d.shape[0]
-    node_times_parallelism = np.zeros(num_nodes)
-    node_times_sequential = np.zeros(num_nodes)
+    node_sequential_time = np.zeros(num_nodes)
+    node_parallelism_time = np.zeros(num_nodes)
+    node_parallelism_max_latency = np.zeros(num_nodes)
+    node_parallelism_bandwidth_floor = np.zeros(num_nodes)
 
     ref_host = Host(host_name=ref_host_name)
-    ref_host_bisect_bw = ref_host.get_specs("mem_bw") / 2
+
+    # we assume the network is full-duplex
+    network_bw = num_nodes * ref_host.get_specs("network_bw")
 
     for nidx in range(num_nodes):
-        node_times_parallelism[nidx] = np.max(
-            x_send_2d[nidx, :] * bin_latencies, x_recv_2d[nidx, :] * bin_latencies
+        # --- Latency floor ---
+        # Under perfect overlap you still must wait for the slowest single message.
+        # Take the worse of send/recv per bin, then the max over bins.
+        node_parallelism_max_latency[nidx] = np.max(
+            np.maximum(x_send_2d[nidx, :] * bin_latencies, x_recv_2d[nidx, :] * bin_latencies)
         )
-        node_times_sequential[nidx] = 
-        latency_bound = np.sum((x_send_2d[nidx, :] + x_recv_2d[nidx, :]) * bin_latencies)
-        node_times[nidx] = latency_bound
 
-    overlap_time = np.max(node_times)
-    sequential_time = np.sum(node_times)
-    heaviest_node = int(np.argmax(node_times))
+        # --- Bandwidth floor ---
+        # Time to push the heavier direction's bytes through the link at full
+        # rate. max(send, recv) because full-duplex links don't contend.
+        send_bytes = np.sum(x_send_2d[nidx, :] * msg_sizes)
+        recv_bytes = np.sum(x_recv_2d[nidx, :] * msg_sizes)
+        node_parallelism_bandwidth_floor[nidx] = max(send_bytes, recv_bytes) / network_bw
 
-    return overlap_time, sequential_time, heaviest_node
+        node_parallelism_time[nidx] = max(
+            node_parallelism_max_latency[nidx], node_parallelism_bandwidth_floor[nidx]
+        )
+
+        # No-overlap reference: sum the latency of every message (both dirs).
+        node_sequential_time[nidx] = np.sum(
+            (x_send_2d[nidx, :] + x_recv_2d[nidx, :]) * bin_latencies
+        )
+
+    overlap_time = np.max(node_parallelism_time)
+    sequential_time = np.sum(node_sequential_time)
+
+    return overlap_time, sequential_time
