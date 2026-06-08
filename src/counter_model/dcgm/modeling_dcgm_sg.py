@@ -3,17 +3,18 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import pandas as pd
-from gpu_metrics import MetricValues, TimeComponents, TimeSlice
-from hw_config.hw_specs import GPU, GPUSpec, Host, HostSpec
-from job_processor import SingleJobProcessor
-from perf_calculators import (
+
+from counter_model.dcgm.gpu_metrics import MetricValues, TimeComponents, TimeSlice
+from counter_model.dcgm.job_processor import SingleJobProcessor
+from counter_model.dcgm.perf_calculators import (
     GPUScaleCalculator,
     HostScaleCalculator,
     MetricIntensityCalculator,
     TFWeightCalculator,
     TimeCalculator,
 )
-from utils import ResultsFormatter
+from counter_model.dcgm.utils import ResultsFormatter
+from counter_model.hw_config.hw_specs import GPU, GPUSpec, Host, HostSpec
 
 
 class BaseProfiler(ABC):

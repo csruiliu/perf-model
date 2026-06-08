@@ -9,7 +9,14 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from constants import ALL_CNTRS, MISC_CNTRS, NUM_ALL_CNTRS, RX_HIST_SLICE, TX_HIST_SLICE
+
+from counter_model.cxi.constants import (
+    ALL_CNTRS,
+    MISC_CNTRS,
+    NUM_ALL_CNTRS,
+    RX_HIST_SLICE,
+    TX_HIST_SLICE,
+)
 
 
 # =============================================================

@@ -14,7 +14,8 @@ Dimensions:
 """
 
 import numpy as np
-from constants import (
+
+from counter_model.cxi.constants import (
     ALL_CNTRS,
     MTU,
     NUM_ALL_CNTRS,

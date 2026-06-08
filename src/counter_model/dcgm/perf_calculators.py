@@ -1,6 +1,7 @@
 import numpy as np
-from gpu_metrics import MetricValues, TimeComponents, TimeSlice
-from hw_config.hw_specs import GPU, Host
+
+from counter_model.dcgm.gpu_metrics import MetricValues, TimeComponents, TimeSlice
+from counter_model.hw_config.hw_specs import GPU, Host
 
 
 class MetricIntensityCalculator:

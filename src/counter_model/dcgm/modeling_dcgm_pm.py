@@ -1,7 +1,7 @@
 import argparse
 
-from hw_config.hw_specs import GPUSpec
-from job_processor import MultiJobProcessor
+from counter_model.dcgm.job_processor import MultiJobProcessor
+from counter_model.hw_config.hw_specs import GPUSpec
 
 # ============================================================================
 # COMMAND LINE INTERFACE

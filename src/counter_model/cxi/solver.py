@@ -10,8 +10,9 @@ import warnings
 
 import cvxpy as cp
 import numpy as np
-from constants import COUNTER_GROUPS, RX_HIST_SLICE, TX_HIST_SLICE
 from scipy.optimize import nnls
+
+from counter_model.cxi.constants import COUNTER_GROUPS, RX_HIST_SLICE, TX_HIST_SLICE
 
 
 # =============================================================

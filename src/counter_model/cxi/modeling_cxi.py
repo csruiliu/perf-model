@@ -7,12 +7,17 @@ Full pipeline for the network time model.
 import argparse
 from pathlib import Path
 
-from build_matrix import build_matrix_a, validate_matrix_a
-from constants import MSG_SIZE_SETS
-from hw_config.hw_specs import HostSpec
-from load_counters import load_counters_single_job
-from solver import print_solution_summary, solve_global, validate_solution
-from time_estimator import create_direct_lookup_model, time_estimation
+from counter_model.cxi.build_matrix import build_matrix_a, validate_matrix_a
+from counter_model.cxi.constants import MSG_SIZE_SETS
+from counter_model.cxi.load_counters import load_counters_single_job
+from counter_model.cxi.solver import print_solution_summary, solve_global, validate_solution
+from counter_model.cxi.time_estimator import (
+    build_latency_model_from_config,
+    build_latency_model_from_file,
+    time_estimation,
+)
+from counter_model.hw_config.hw_specs import HostSpec
+from counter_model.hw_config.pm_config import LATENCY_TABLES
 
 
 def main():
@@ -35,19 +40,27 @@ def main():
     )
 
     parser.add_argument(
-        "--latency_file",
-        type=Path,
-        default=None,
-        help="Path to OSU latency benchmark output (e.g., osu_latency.out)",
-    )
-
-    parser.add_argument(
         "-rh",
         "--ref_host",
         type=str,
         required=True,
         choices=list(HostSpec.keys()),
         help="Reference Host",
+    )
+
+    parser.add_argument(
+        "--latency_file",
+        type=Path,
+        default=None,
+        help="Optional path to latency file (e.g., osu_latency.out). If provided, overrides the built-in table.",
+    )
+
+    parser.add_argument(
+        "--latency_table",
+        type=str,
+        default="omb",
+        choices=list(LATENCY_TABLES.keys()),
+        help="Which latency table from pm_config.py to use.",
     )
 
     args = parser.parse_args()
@@ -105,19 +118,19 @@ def main():
     # ----------------------------------------------------------
     # Step 4 — Estimate Communication Time Upper Bound
     # ----------------------------------------------------------
-    if not args.latency_file or not args.latency_file.exists():
-        print(
-            "\n[INFO] No OSU latency file provided or founded — skipping Step 4 (time estimation)."
-        )
-        return
-
-    print("\n" + "=" * 60)
-    print("Step 4: Estimate Communication Time Upper Bound")
-    print("=" * 60)
-
-    # Choose the latency calculation method
-    print("Using direct raw latency lookup...")
-    latency_model = create_direct_lookup_model(args.latency_file)
+    # Choose the latency source: explicit file overrides the built-in table.
+    if args.latency_file and args.latency_file.exists():
+        print(f"Using raw latency lookup from file: {args.latency_file}")
+        latency_model = build_latency_model_from_file(args.latency_file)
+    else:
+        if args.latency_file:
+            print(
+                f"[INFO] Latency file '{args.latency_file}' not found — "
+                f"Using pm_config table '{args.latency_table}'."
+            )
+        else:
+            print(f"Using built-in latency table from pm_config: '{args.latency_table}'")
+        latency_model = build_latency_model_from_config(args.latency_table)
 
     n_msg_sizes = len(msg_size_sets)
     x_send = vec_x[:, :n_msg_sizes]

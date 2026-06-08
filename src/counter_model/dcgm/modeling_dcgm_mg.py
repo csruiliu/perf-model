@@ -3,11 +3,16 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import pandas as pd
-from gpu_metrics import MetricValues, TimeComponents, TimeSlice
-from hw_config.hw_specs import GPU, GPUSpec
-from job_processor import SingleJobProcessor
-from perf_calculators import MetricIntensityCalculator, ScaleCalculator, TimeCalculator
-from utils import ResultsFormatter
+
+from counter_model.dcgm.gpu_metrics import MetricValues, TimeComponents, TimeSlice
+from counter_model.dcgm.job_processor import SingleJobProcessor
+from counter_model.dcgm.perf_calculators import (
+    GPUScaleCalculator,
+    MetricIntensityCalculator,
+    TimeCalculator,
+)
+from counter_model.dcgm.utils import ResultsFormatter
+from counter_model.hw_config.hw_specs import GPU, GPUSpec
 
 
 class BaseProfiler(ABC):
@@ -242,7 +247,7 @@ class TargetPredictor(BaseProfiler):
             "fp16a_ref": [],
         }
 
-        scale_calc = ScaleCalculator(self.ref_gpu, self.tgt_gpu, tensor_prec)
+        scale_calc = GPUScaleCalculator(self.ref_gpu, self.tgt_gpu, tensor_prec)
 
         for row in df.itertuples(index=False):
             mv = MetricValues.from_row(row, metrics)

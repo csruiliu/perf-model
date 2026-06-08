@@ -6,7 +6,9 @@ from collections.abc import Callable
 from pathlib import Path
 
 import numpy as np
-from hw_config.hw_specs import Host
+
+from counter_model.hw_config.hw_specs import Host
+from counter_model.hw_config.pm_config import LATENCY_TABLES
 
 
 def parse_osu_benchmark(filepath: str | Path) -> tuple[np.ndarray, np.ndarray]:
@@ -30,22 +32,46 @@ def parse_osu_benchmark(filepath: str | Path) -> tuple[np.ndarray, np.ndarray]:
     return np.array(sizes, dtype=np.float64), np.array(values, dtype=np.float64)
 
 
-def create_direct_lookup_model(osu_filepath: str | Path) -> Callable[[np.ndarray], np.ndarray]:
-    """Creates a direct lookup model for latency using linear interpolation."""
-    sizes, latencies = parse_osu_benchmark(osu_filepath)
+def _build_interp_model(
+    sizes: np.ndarray, latencies: np.ndarray, source_label: str
+) -> Callable[[np.ndarray], np.ndarray]:
+    """Builds a linear-interpolation latency lookup from size/latency arrays."""
     if len(sizes) == 0:
-        raise ValueError(f"Could not parse latency data from {osu_filepath}")
+        raise ValueError(f"No latency data available from {source_label}")
 
     sort_idx = np.argsort(sizes)
     sorted_sizes = sizes[sort_idx]
     sorted_latencies = latencies[sort_idx]
 
-    print(f"  [Latency Lookup] Loaded {len(sorted_sizes)} points from {Path(osu_filepath).name}")
+    print(f"  [Latency Lookup] Loaded {len(sorted_sizes)} points from {source_label}")
 
     def predict_latency(msg_sizes_array: np.ndarray) -> np.ndarray:
         return np.interp(msg_sizes_array, sorted_sizes, sorted_latencies)
 
     return predict_latency
+
+
+def build_latency_model_from_file(osu_filepath: str | Path) -> Callable[[np.ndarray], np.ndarray]:
+    """Creates a direct lookup model for latency using linear interpolation (file-based)."""
+    sizes, latencies = parse_osu_benchmark(osu_filepath)
+    return _build_interp_model(sizes, latencies, Path(osu_filepath).name)
+
+
+def build_latency_model_from_config(table_name: str) -> Callable[[np.ndarray], np.ndarray]:
+    """Creates a latency lookup model from a named table in pm_config.py."""
+    if table_name not in LATENCY_TABLES:
+        raise KeyError(
+            f"No latency table named '{table_name}'. Available: {list(LATENCY_TABLES.keys())}"
+        )
+
+    table = LATENCY_TABLES[table_name]
+    if not table:
+        raise ValueError(f"Latency table '{table_name}' is empty in pm_config.py")
+
+    sizes = np.array(list(table.keys()), dtype=np.float64)
+    latencies = np.array(list(table.values()), dtype=np.float64)
+
+    return _build_interp_model(sizes, latencies, f"pm_config[{table_name}]")
 
 
 def fit_gap_model(
