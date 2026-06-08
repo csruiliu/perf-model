@@ -9,6 +9,7 @@
 **/pm_data
 **/__pycache__
 **/*.txt
+**/*.egg-info/
 
 # Prerequisites
 *.d
