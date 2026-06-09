@@ -1,0 +1,26 @@
+[project]
+name = "counter_model"
+version = "0.1.0"
+description = "Hardware counter-based performance modeling"
+requires-python = ">=3.12"
+dependencies = [
+    "cvxpy",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "scipy",
+    "joblib",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff",
+]
+
+[build-system]
+requires = ["setuptools>=82.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
