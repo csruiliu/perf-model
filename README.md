@@ -19,7 +19,16 @@ One exmaple to quickly run the DCGM-based model using the collected counters of 
 
 ```bash
 # in the root folder
-python3 -m counter_model.dcgm.modeling_dcgm_sg -f ./eval/bgw/results/BGW_EPSILON_45934168-a100-fp64/dcgm.d1000.45934168.0-0.out -d 1000 -o 932000 -rg A100-40 -tg H100-SXM -rh Perlmutter -th Einsteinium-H100 -ca same --metrics GRACT,SMOCC,TENSO,DRAMA,FP64A,FP32A,FP16A,PCITX,PCIRX,NVLTX,NVLRX
+python3 -m counter_model.dcgm.modeling_dcgm_sg \
+    -f ./eval/bgw/results/BGW_EPSILON_45934168-a100-fp64/dcgm.d1000.45934168.0-0.out \
+    -d 1000 \
+    -o 932000 \
+    -rg A100-40 \
+    -tg H100-SXM \
+    -rh Perlmutter \
+    -th Einsteinium-H100 \
+    -ca same \
+    --metrics GRACT,SMOCC,TENSO,DRAMA,FP64A,FP32A,FP16A,PCITX,PCIRX,NVLTX,NVLRX
 ```
 
 
@@ -27,5 +36,8 @@ One exmaple to quickly run the CXI-based model using the collected counters of L
 
 ```bash
 # in the root folder
-python3 -m counter_model.cxi.modeling_cxi --counter_dir=./eval/lammps/results/LPS_SMALL_FP32_CTR_51907293 --msg_set fine -rh Perlmutter
+python3 -m counter_model.cxi.modeling_cxi \
+    --counter_dir=./eval/lammps/results/LPS_SMALL_FP32_CTR_51907293 \
+    --msg_set fine \
+    -rh Perlmutter
 ```
