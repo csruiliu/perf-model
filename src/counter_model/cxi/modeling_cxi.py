@@ -141,8 +141,8 @@ def main():
     )
 
     print("\n  === Time Estimation Results ===")
-    print(f"  Overlap mode (Max node time): {overlap_time_us / 1e6:.4f} seconds")
-    print(f"  Sequential mode (Total time): {sequential_time_us / 1e6:.4f} seconds")
+    print(f"  Full Parallelism: {overlap_time_us / 1e6:.4f} seconds")
+    print(f"  Full Sequentiality: {sequential_time_us / 1e6:.4f} seconds")
 
 
 if __name__ == "__main__":

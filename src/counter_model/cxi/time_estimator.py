@@ -178,7 +178,8 @@ def time_estimation(
     ref_host = Host(host_name=ref_host_name)
 
     # we assume the network is full-duplex
-    network_bw = num_nodes * ref_host.get_specs("network_bw")
+    # the unit of network_bw is usually gb/s
+    network_bw = ref_host.get_specs("network_bw") * 10e9
 
     for nidx in range(num_nodes):
         # --- Latency floor ---
