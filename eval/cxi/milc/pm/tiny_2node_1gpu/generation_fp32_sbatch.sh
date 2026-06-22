@@ -10,7 +10,7 @@
 #SBATCH --gpus-per-task=1
 #SBATCH --gpu-bind=none
 #SBATCH --perf=generic
-#SBATCH -o /global/homes/r/ruiliu/perf-model/milc/results/MILC_PM_TINY_FP32_%j/%j.out
+#SBATCH -o /global/homes/r/ruiliu/perf-model/eval/cxi/milc/results/MILC_PM_TINY_FP32_%j/%j.out
 
 # IPM Path and Settings
 export IPM_HOME=/pscratch/sd/r/ruiliu/IPM/install
@@ -28,9 +28,9 @@ MILC_DIR="/pscratch/sd/r/ruiliu/milc-pm-a100-fp32"
 MILC_QCD_DIR=${MILC_DIR}/milc_qcd
 LATTICE_DIR=${MILC_DIR}/lattices
 
-MILC_COMM="/global/homes/r/ruiliu/perf-model/cxi/milc/common"
-MILC_PM="/global/homes/r/ruiliu/perf-model/cxi/milc/pm"
-MILC_RESULTS="/global/homes/r/ruiliu/perf-model/cxi/milc/results"
+MILC_COMM="/global/homes/r/ruiliu/perf-model/eval/cxi/milc/common"
+MILC_PM="/global/homes/r/ruiliu/perf-model/eval/cxi/milc/pm"
+MILC_RESULTS="/global/homes/r/ruiliu/perf-model/eval/cxi/milc/results"
 
 # Tuning results are stored in qudatune_dir.
 qudatune_dir="$PWD/qudatune-generation-fp32"
