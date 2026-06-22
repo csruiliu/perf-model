@@ -10,7 +10,7 @@
 #SBATCH --gpus-per-task=1
 #SBATCH --gpu-bind=none
 #SBATCH --perf=generic
-#SBATCH -o /global/homes/r/ruiliu/perf-model-dcgm/milc/pm/results/MILC_TINY_FP32_%j/%j.out
+#SBATCH -o /global/homes/r/ruiliu/perf-model/milc/results/MILC_PM_TINY_FP32_%j/%j.out
 
 # IPM Path and Settings
 export IPM_HOME=/pscratch/sd/r/ruiliu/IPM/install
