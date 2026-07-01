@@ -1,5 +1,17 @@
 #!/bin/bash
 
+##################################
+# GO TO COMPUTE NODE FOR COMPILE
+##################################
+
+module load PrgEnv-gnu
+module load cudatoolkit
+module load craype-accel-nvidia80
+module load cmake
+module unload xalt
+export MPICH_GPU_SUPPORT_ENABLED=1
+
+
 BASE_DIRECTORY=$(pwd)
 QUDA_SOURCE_DIRECTORY=${BASE_DIRECTORY}/quda_src
 QUDA_INSTALL_DIRECTORY=${BASE_DIRECTORY}/quda_install
