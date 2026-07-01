@@ -8,10 +8,11 @@
 #SBATCH -A nstaff
 #SBATCH -J bgw_eps_Si214
 #SBATCH -C gpu&hbm40g
+#SBATCH --exclusive
 #SBATCH --perf=generic
-#SBATCH -o /global/homes/r/ruiliu/perf-model-dcgm/bgw/pm/results/EPS_SMALL_FP64_%j/%j.out
+#SBATCH -o /global/homes/r/ruiliu/perf-model/eval/dcgm/bgw/pm/results/EPS_SMALL_FP64_%j/%j.out
 
-podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
+podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN -p 5556:5556 nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
 
 N10_BGW="/pscratch/sd/r/ruiliu/bgw-pm-a100-fp64"
 if [[ -z "${N10_BGW}" ]]; then
@@ -22,15 +23,15 @@ fi
 
 N10_BGW_EXEC="${N10_BGW}/BerkeleyGW-n10/bin"
 
-BGW_PM="/global/homes/r/ruiliu/perf-model-dcgm/bgw/pm"
+BGW_PM="/global/homes/r/ruiliu/perf-model/eval/dcgm/bgw/pm"
 
-BGW_COMM="/global/homes/r/ruiliu/perf-model-dcgm/bgw/common"
+BGW_COMM="/global/homes/r/ruiliu/perf-model/eval/dcgm/bgw/common"
 
 Si_WFN_folder=${N10_BGW}/Si_WFN_folder
 
 Si214_WFN_folder=${Si_WFN_folder}/Si214/WFN_file
 
-RESULTS_DIR="${BGW_PM}/results/EPS_SMALL_FP64_${SLURM_JOB_ID}"
+export RESULTS_DIR="${BGW_PM}/results/EPS_SMALL_FP64_${SLURM_JOB_ID}"
 
 mkdir -p ${RESULTS_DIR}
 #stripe_large $RESULTS_DIR
@@ -54,13 +55,12 @@ export BGW_WFN_HDF5_INDEPENDENT=1
 DCGM_PATH="${BGW_PM}/wrap_dcgmi_container.sh"
 
 # export these two variables for wrap_dcgmi_container.sh 
-export RESULTS_DIR
 export DCGM_DELAY=1000
 
-start=$(date +%s.%N)
+start_time=$(date +%s.%N)
 srun -N 1 -c 32 --ntasks-per-node=1 --gpus-per-node=1 ${DCGM_PATH} ./epsilon.cplx.x
-end=$(date +%s.%N)
-elapsed=$(printf "%s - %s\n" $end $start | bc -l)
+end_time=$(date +%s.%N)
+elapsed=$(printf "%s - %s\n" $end_time $start_time | bc -l)
 
 printf "Elapsed Time: %.2f seconds\n" $elapsed > ${RESULTS_DIR}/runtime.out
 

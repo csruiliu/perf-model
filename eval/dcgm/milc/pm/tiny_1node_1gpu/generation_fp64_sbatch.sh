@@ -59,10 +59,10 @@ export QUDA_MILC_HISQ_RECONSTRUCT_SLOPPY=9
 export RESULTS_DIR
 export DCGM_DELAY=1000
 
-start=$(date +%s.%N)
+start_time=$(date +%s.%N)
 srun -N 1 -n $SLURM_NTASKS -c $SLURM_CPUS_PER_TASK --gpus-per-node=1 --cpu-bind=cores ./wrap_dcgmi_container.sh $exe $input
 end=$(date +%s.%N)
-elapsed=$(printf "%s - %s\n" $end $start | bc -l)
+elapsed_time=$(printf "%s - %s\n" $end_time $start_time | bc -l)
 
 printf "Elapsed Time: %.2f seconds\n" $elapsed > ${RESULTS_DIR}/runtime.out
 
