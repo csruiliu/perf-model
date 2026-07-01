@@ -8,6 +8,7 @@
 #SBATCH -A nstaff
 #SBATCH -J bgw_sig_Si214
 #SBATCH -C gpu&hbm40g
+#SBATCH --exclusive
 #SBATCH --perf=generic
 #SBATCH -o /global/homes/r/ruiliu/perf-model/eval/dcgm/bgw/pm/results/SIG_SMALL_FP64_%j/%j.out
 
