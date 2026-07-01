@@ -9,6 +9,7 @@
 #SBATCH -C gpu&hbm40g
 #SBATCH -G 1
 #SBATCH --gpu-bind=none
+#SBATCH --exclusive
 #SBATCH --perf=generic
 #SBATCH -t 00:30:00
 #SBATCH -o /global/homes/r/ruiliu/perf-model-dcgm/lammps/pm/results/LPS_SMALL_FP32_%j/%j.out
