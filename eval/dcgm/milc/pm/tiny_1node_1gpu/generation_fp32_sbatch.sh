@@ -9,10 +9,11 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-task=1
 #SBATCH --gpu-bind=none
+#SBATCH --exclusive
 #SBATCH --perf=generic
-#SBATCH -o /global/homes/r/ruiliu/perf-model-dcgm/milc/pm/results/MILC_TINY_FP32_%j/%j.out
+#SBATCH -o /global/homes/r/ruiliu/perf-model/eval/dcgm/milc/pm/results/MILC_TINY_FP32_%j/%j.out
 
-podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN -p 5555:5555 nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
+podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN -p 5556:5556 nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
 
 #module load PrgEnv-gnu
 #module load cudatoolkit
@@ -23,8 +24,8 @@ MILC_DIR="/pscratch/sd/r/ruiliu/milc-pm-a100-fp32"
 MILC_QCD_DIR=${MILC_DIR}/milc_qcd
 LATTICE_DIR=${MILC_DIR}/lattices
 
-MILC_COMM="/global/homes/r/ruiliu/perf-model-dcgm/milc/common"
-MILC_PM="/global/homes/r/ruiliu/perf-model-dcgm/milc/pm"
+MILC_COMM="/global/homes/r/ruiliu/perf-model/eval/dcgm/milc/common"
+MILC_PM="/global/homes/r/ruiliu/perf-model/eval/dcgm/milc/pm"
 
 # Tuning results are stored in qudatune_dir.
 qudatune_dir="$PWD/qudatune-generation-fp32"

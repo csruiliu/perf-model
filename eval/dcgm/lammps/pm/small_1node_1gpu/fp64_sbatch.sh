@@ -14,7 +14,7 @@
 #SBATCH -t 00:30:00
 #SBATCH -o /global/homes/r/ruiliu/perf-model-dcgm/lammps/pm/results/LPS_SMALL_FP64_%j/%j.out
 
-podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN -p 5555:5555 nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
+podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN -p 5556:5556 nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
 
 # the input specification
 spec=small

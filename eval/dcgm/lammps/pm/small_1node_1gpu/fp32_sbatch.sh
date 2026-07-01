@@ -12,9 +12,9 @@
 #SBATCH --exclusive
 #SBATCH --perf=generic
 #SBATCH -t 00:30:00
-#SBATCH -o /global/homes/r/ruiliu/perf-model-dcgm/lammps/pm/results/LPS_SMALL_FP32_%j/%j.out
+#SBATCH -o /global/homes/r/ruiliu/perf-model/eval/dcgm/lammps/pm/results/LPS_SMALL_FP32_%j/%j.out
 
-podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN -p 5555:5555 nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
+podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN -p 5556:5556 nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
 
 # the input specification
 spec=small
@@ -27,9 +27,9 @@ BENCH_SPEC="\
 
 LAMMPS_DIR="/pscratch/sd/r/ruiliu/lammps-pm-a100-fp32"
 
-LAMMPS_COMM="/global/homes/r/ruiliu/perf-model-dcgm/lammps/common"
+LAMMPS_COMM="/global/homes/r/ruiliu/perf-model/eval/dcgm/lammps/common"
 
-LAMMPS_PM="/global/homes/r/ruiliu/perf-model-dcgm/lammps/pm"
+LAMMPS_PM="/global/homes/r/ruiliu/perf-model/eval/dcgm/lammps/pm"
 
 RESULTS_DIR="${LAMMPS_PM}/results/LPS_SMALL_FP32_${SLURM_JOB_ID}"
 
