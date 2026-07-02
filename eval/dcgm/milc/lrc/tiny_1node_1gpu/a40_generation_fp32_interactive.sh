@@ -5,8 +5,8 @@ N10_MILC="/global/scratch/users/rliu5/milc-lrc-a40-fp32"
 MILC_QCD_DIR="${N10_MILC}/milc_qcd"
 LATTICE_DIR="${N10_MILC}/lattices"
 
-MILC_COMM="/global/home/users/rliu5/perf-model-dcgm/milc/common"
-MILC_LRC="/global/home/users/rliu5/perf-model-dcgm/milc/lrc"
+MILC_COMM="/global/home/users/rliu5/perf-model/eval/dcgm/milc/common"
+MILC_LRC="/global/home/users/rliu5/perf-model/eval/dcgm/milc/lrc"
 
 # Tuning results are stored in qudatune_dir.
 qudatune_dir="$PWD/qudatune-generation-a40-fp32"
@@ -15,7 +15,7 @@ if [ ! -d ${qudatune_dir} ]; then
     mkdir ${qudatune_dir}
 fi
 
-RESULTS_DIR="${MILC_LRC}/results/MILC_TINY_FP32_${SLURM_JOB_ID}"
+export RESULTS_DIR="${MILC_LRC}/results/MILC_TINY_FP32_${SLURM_JOB_ID}"
 mkdir -p ${RESULTS_DIR}
 cd ${RESULTS_DIR}
 
@@ -35,14 +35,13 @@ export QUDA_ENABLE_GDR=1
 export QUDA_MILC_HISQ_RECONSTRUCT=13
 export QUDA_MILC_HISQ_RECONSTRUCT_SLOPPY=9
 
-# export these two variables for wrap_dcgmi_container.sh 
-export RESULTS_DIR
+# export the variable for wrap_dcgmi_container.sh 
 export DCGM_DELAY=1000
 
-start=$(date +%s.%N)
+start_time=$(date +%s.%N)
 srun -N 1 -n 1 -c 16 --gpus-per-node=1 --cpu-bind=cores $exe $input > ${RESULTS_DIR}/${SLURM_JOB_ID}.out
-end=$(date +%s.%N)
-elapsed=$(printf "%s - %s\n" $end $start | bc -l)
+end_time=$(date +%s.%N)
+elapsed=$(printf "%s - %s\n" $end_time $start_time | bc -l)
 
 printf "Elapsed Time: %.2f seconds\n" $elapsed > ${RESULTS_DIR}/runtime.out
 

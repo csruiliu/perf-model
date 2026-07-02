@@ -9,13 +9,13 @@ BENCH_SPEC="\
         -var nx $nn -var ny $nn -var nz $nn \
         -var nsteps 100"
 
-RESULTS_DIR="/global/home/users/rliu5/perf-model-dcgm/lammps/lrc/results/LPS_SMALL_FP32_${SLURM_JOB_ID}"
+RESULTS_DIR="/global/home/users/rliu5/perf-model/eval/dcgm/lammps/lrc/results/LPS_SMALL_FP32_${SLURM_JOB_ID}"
 
 LAMMPS_DIR="/global/scratch/users/rliu5/lammps-lrc-a40-fp32"
 
-LAMMPS_COMM="/global/home/users/rliu5/perf-model-dcgm/lammps/common"
+LAMMPS_COMM="/global/home/users/rliu5/perf-model/eval/dcgm/lammps/common"
 
-LAMMPS_LRC="/global/home/users/rliu5/perf-model-dcgm/lammps/lrc"
+LAMMPS_LRC="/global/home/users/rliu5/perf-model/eval/dcgm/lammps/lrc"
 
 mkdir -p ${RESULTS_DIR}
 cd ${RESULTS_DIR}
@@ -32,10 +32,10 @@ export MPICH_GPU_SUPPORT_ENABLED=1
 
 input="-k on g 1 -sf kk -pk kokkos newton on neigh half ${BENCH_SPEC} "
 
-start=$(date +%s.%N)
+start_time=$(date +%s.%N)
 srun -N 1 -n 1 -c 16 --gpus-per-node=1 --cpu-bind=cores $EXE $input > ${RESULTS_DIR}/${SLURM_JOB_ID}.out
-end=$(date +%s.%N)
-elapsed=$(printf "%s - %s\n" $end $start | bc -l)
+end_time=$(date +%s.%N)
+elapsed=$(printf "%s - %s\n" $end_time $start_time | bc -l)
 
 printf "Elapsed Time: %.2f seconds\n" $elapsed > ${RESULTS_DIR}/runtime.out
 

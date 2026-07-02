@@ -96,7 +96,7 @@ WANTQIO=true \
 WANTQMP=true \
 QIOPAR=${QUDA_INSTALL_DIRECTORY} \
 QMPPAR=${QUDA_INSTALL_DIRECTORY} \
-LDFLAGS="-L${CUDA_MATH}/lib64 -Wl,-rpath,${CUDA_MATH}/lib64" \
+LDFLAGS="-L${CUDA_MATH}/lib64 -Wl,-rpath,${CUDA_MATH}/lib64 -L${CUDA_HOME}/lib64/stubs" \
 make -j 1 su3_rhmd_hisq
 
 popd
