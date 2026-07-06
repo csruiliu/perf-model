@@ -119,7 +119,7 @@ class GpuScaler:
         """Compute k_smocc value for given warps and GPU"""
         return warps * gpu.get_specs("num_sm") * gpu.get_specs("boost_clock")
 
-    def _scale_metric(
+    def _compute_scale(
         self, intensity_ref: float, ratio: float
     ) -> tuple[float, float, float, float]:
         """Generic method to compute scaling factors for any intensity metric"""
@@ -164,20 +164,6 @@ class GpuScaler:
         """Calculate DRAM bandwidth scaling factors"""
         return self._compute_scale(dram_ref, self.bw_ratio)
 
-    def dram_l2_scale(self, intensities: dict) -> tuple[float, float, float, float]:
-        """Calculate DRAM bandwidth with L2 cache scaling factors (tentative)"""
-        if intensities["drama_gract"] < self.INTENSITY_THRESHOLD:
-            return np.inf, np.inf, np.inf, np.inf
-
-        scale_factor = self.bw_ratio / intensities["drama_gract"]
-        l2_cache_ratio = self.tgt_gpu.get_specs("l2_cache") / self.ref_gpu.get_specs("l2_cache")
-
-        def calculate_lambda_factor(key):
-            l_factor = 1 / (1 - intensities["smocc_gract"] * (l2_cache_ratio - 1))
-            return min(self.scale_smocc[key], scale_factor) * l_factor
-
-        return tuple(calculate_lambda_factor(key) for key in ["lower", "mid", "upper", "mock"])
-
     def fp64_scale(self, fp64_ref: float) -> tuple[float, float, float, float]:
         """Calculate FP64 scaling factors"""
         return self._compute_scale(fp64_ref, self.fp64_ratio)
@@ -189,32 +175,3 @@ class GpuScaler:
     def fp16_scale(self, fp16_ref: float) -> tuple[float, float, float, float]:
         """Calculate FP16 scaling factors"""
         return self._compute_scale(fp16_ref, self.fp16_ratio)
-
-    def est_flop_tgt(
-        self, tf_weights: dict[str, float], intensities: dict[str, float], smocc_scale: float
-    ) -> tuple[float, float, float, float]:
-        # Compute tf_tgt once
-        tf_tgt = (
-            tf_weights["tf64"] * self.ref_gpu["tf64"]
-            + tf_weights["tf32"] * self.ref_gpu["tf32"]
-            + tf_weights["tf16"] * self.ref_gpu["tf16"]
-        )
-
-        # Define precision types and their references
-        fps = ["fp64", "fp32", "fp16"]
-        fp_refs = [
-            intensities["fp64a_gract"],
-            intensities["fp32a_gract"],
-            intensities["fp16a_gract"],
-        ]
-
-        tensor_tgt = tf_tgt * intensities["tenso_gract"] * smocc_scale
-
-        fp_tgts = [
-            min(self.ref_gpu[prec] * ref * smocc_scale, self.tgt_gpu[prec])
-            for prec, ref in zip(fps, fp_refs, strict=True)
-        ]
-
-        flop_tgt = tensor_tgt + sum(fp_tgts)
-
-        return flop_tgt

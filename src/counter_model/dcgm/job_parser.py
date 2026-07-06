@@ -37,7 +37,7 @@ class JobParser:
     # ------------------------------------------------------------------ #
     def parsing_single_job(self, num_gpu) -> pd.DataFrame:
         """Read a single DCGM file and return a DataFrame of the requested metrics."""
-        print(f"Processing single DCGM file (expecting {self.num_gpu} GPU(s)): {self.dcgm_file}")
+        print(f"Processing single DCGM file (expecting {num_gpu} GPU(s)): {self.dcgm_file}")
 
         with open(self.dcgm_file) as file:
             lines = file.readlines()

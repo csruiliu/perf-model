@@ -12,19 +12,18 @@ class Dispatcher:
         self.args = args
 
     def dispatch(self):
-        table = {
-            ("single", "single"): self.single_job_single_gpu,
-            ("single", "multi"): self.single_job_multi_gpu,
-            ("multi", "single"): self.multi_job_single_gpu,
-            ("multi", "multi"): self.multi_job_multi_gpu,
-        }
-        try:
-            handler = table[(self.args.jobs, self.args.gpus)]
-        except KeyError as exc:
+        if self.args.job_mode == "single" and self.args.num_gpu == 1:
+            self.single_job_single_gpu()
+        elif self.args.job_mode == "single" and self.args.num_gpu > 1:
+            self.single_job_multi_gpu()
+        elif self.args.job_mode == "multi" and self.args.num_gpu == 1:
+            self.multi_job_single_gpu()
+        elif self.args.job_mode == "multi" and self.args.num_gpu > 1:
+            self.multi_job_multi_gpu()
+        else:
             raise SystemExit(
-                f"Unsupported combination: jobs={self.args.jobs}, gpus={self.args.gpus}"
-            ) from exc
-        return handler()
+                f"Unsupported combination: jobs={self.args.job_mode}, gpus={self.args.num_gpu}"
+            )
 
     def single_job_single_gpu(self):
         job_parser = JobParser(self.args.dcgm_input, self.args.metrics)

@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 import pandas as pd
 
 from counter_model.dcgm.gpu_metrics import MetricValues
-from counter_model.dcgm.gpu_time import TimeFraction, TimeSlicer
+from counter_model.dcgm.gpu_time import TimeSlicer
 from counter_model.dcgm.scaler import get_tf_weights
 from counter_model.dcgm.utils import ResultsFormatter
 from counter_model.hw_config.hw_specs import GPU
@@ -23,38 +23,25 @@ class BaseProfiler(ABC):
         """Run the profiling/prediction"""
         pass
 
-    @staticmethod
-    def _get_time_fraction(df: pd.DataFrame, metrics: list[str], calc_fn) -> list[TimeFraction]:
-        """Calculate time fraction for all rows using the given calculator."""
-        return [calc_fn(MetricValues.from_row(row, metrics)) for row in df.itertuples(index=False)]
-
 
 class SingleGpuProfiler(BaseProfiler):
     """Profiles performance on reference hardware"""
 
     def run(self, profiled_df: pd.DataFrame, args: argparse.Namespace):
         """Model performance on reference hardware"""
-        time_frac_ref = self._get_time_fraction(
-            profiled_df, args.metrics, self.time_slicer.time_fraction_single_gpu
-        )
-
-        time_window = self.time_slicer.get_time_window(
-            args.overall_runtime_ms, args.start_timestamp, args.end_timestamp, len(time_frac_ref)
-        )
-
-        windowed_df = time_window.extract_from_dataframe(profiled_df)
-        flops = self._calc_flops(windowed_df, args.smetrics)
-        membw = self._calc_membw(windowed_df, args.metrics)
-
-        self.formatter.print_reference_results(windowed_df, flops, membw, self.gpu.get_name())
-
-    def _estimate_flops(self, profiled_df: pd.DataFrame, metrics: list[str]) -> float:
-        """Calculate FLOPS"""
         flop_sum = 0.0
+        dram_sum = 0.0
+
+        results = {}
+        results["t_kernel"] = []
+        results["t_pcie"] = []
+        results["t_host"] = []
 
         for row in profiled_df.itertuples(index=False):
-            mv = MetricValues.from_row(row, metrics)
+            mv = MetricValues.from_row(row, args.metrics)
             mv_gract_norm = mv.gract_normalization()
+
+            # Calculate weights for this row
             tf_weights = get_tf_weights(
                 mv_gract_norm["fp64a_gract"],
                 mv_gract_norm["fp32a_gract"],
@@ -66,23 +53,33 @@ class SingleGpuProfiler(BaseProfiler):
                 + tf_weights["tf32"] * self.gpu.get_specs("tf32")
                 + tf_weights["tf16"] * self.gpu.get_specs("tf16")
             )
+
             regular_flop = sum(
                 mv_gract_norm[f"{p}a_gract"] * self.gpu.get_specs(p)
                 for p in ("fp64", "fp32", "fp16")
             )
+
             flop_sum += tensor_flop + regular_flop
-
-        return flop_sum / len(profiled_df)
-
-    def _estimate_membw(self, profiled_df: pd.DataFrame, metrics: list[str]) -> float:
-        """Calculate memory bandwidth"""
-        dram_sum = 0.0
-        for row in profiled_df.itertuples(index=False):
-            mv = MetricValues.from_row(row, metrics)
-            mv_gract_norm = mv.gract_normalization()
             dram_sum += mv_gract_norm["drama_gract"] * self.gpu.get_specs("mem_bw")
 
-        return dram_sum / len(profiled_df)
+            # Calculate time fraction on ref gpu
+            time_frac_ref = self.time_slicer.time_fraction_single_gpu(mv)
+            results["t_kernel"].append(time_frac_ref.t_kernel)
+            results["t_pcie"].append(time_frac_ref.t_pcie)
+            results["t_host"].append(time_frac_ref.t_host)
+
+        time_window = self.time_slicer.get_time_window(
+            args.overall_runtime_ms,
+            args.start_timestamp,
+            args.end_timestamp,
+            len(results["t_host"]),
+        )
+
+        windowed_results = time_window.extract_from_dict(results)
+        flops = flop_sum / len(profiled_df)
+        membw = dram_sum / len(profiled_df)
+
+        self.formatter.print_reference_results(windowed_results, flops, membw, self.gpu.get_name())
 
 
 class MultiGpuProfiler(BaseProfiler):

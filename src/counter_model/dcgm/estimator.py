@@ -33,7 +33,7 @@ class SingleGpuEstimator(BaseEstimator):
         self.ref_gpu = GPU(gpu_name=args.ref_gpu)
         self.tgt_gpu = GPU(gpu_name=args.tgt_gpu)
         self.ref_host = Host(host_name=args.ref_host)
-        self.tgt_host = Host(host_name=args.stgt_host)
+        self.tgt_host = Host(host_name=args.tgt_host)
         super().__init__(args.sample_interval_ms, self.ref_gpu)
 
     def run(self, dcgm_df: pd.DataFrame, args: argparse.Namespace):
