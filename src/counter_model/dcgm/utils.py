@@ -6,14 +6,15 @@ class ResultsFormatter:
         metrics: dict[str, list[float]], flops: float, mem_bw: float, gpu_name: str
     ):
         """Print reference hardware results"""
+        """No need to have total time"""
         print(f"\n{'=' * 60}")
         print(f"Reference Hardware: {gpu_name}\n")
         print(f"Estimated TFLOPS: {flops:.2f}")
         print(f"Estimated GPU Memory Bandwidth: {mem_bw:.2f} GB/s")
 
         print(f"\nEstimated Kernel Time: {sum(metrics['t_kernel']):.2f} s")
-        print(f"Estimated Other Node Time: {sum(metrics['t_othernode']):.2f} s")
-        print(f"Estimated Total Runtime: {sum(metrics['t_total']):.2f} s")
+        print(f"\nEstimated PCIe Time: {sum(metrics['t_pcie']):.2f} s")
+        print(f"Estimated Host Time: {sum(metrics['t_host']):.2f} s")
         print(f"{'=' * 60}\n")
 
     @staticmethod
@@ -37,7 +38,8 @@ class ResultsFormatter:
         print(f"Estimated Kernel Time [Upper SMOCC]: {sum(metrics['t_kernel_upper']):.2f} s")
         print(f"Estimated Kernel Time [Mock SMOCC]: {sum(metrics['t_kernel_mock']):.2f} s")
 
-        print(f"\nEstimated Other Node Time: {sum(metrics['t_othernode']):.2f} s")
+        print(f"\nEstimated PCIe Time: {sum(metrics['t_pcie']):.2f} s")
+        print(f"\nEstimated Host Time: {sum(metrics['t_host']):.2f} s")
 
         print(f"\nEstimated Total Runtime [Lower SMOCC]: {sum(metrics['t_total_lower']):.2f} s")
         print(f"Estimated Total Runtime [Mid SMOCC]:   {sum(metrics['t_total_mid']):.2f} s")

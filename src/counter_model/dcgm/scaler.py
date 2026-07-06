@@ -1,111 +1,27 @@
 import numpy as np
 
-from counter_model.dcgm.gpu_metrics import MetricValues, TimeComponents, TimeSlice
 from counter_model.hw_config.hw_specs import GPU, Host
 
 
-class MetricIntensityCalculator:
-    """Calculates computational intensities"""
+def get_tf_weights(fp64a: float, fp32a: float, fp16a: float, threshold=0.01) -> dict[str, float]:
+    """
+    Calculate weights for tf64, tf32, tf16 based on FP operations
+    """
+    # Apply threshold - treat values < 0.01 as 0
+    fp64a = fp64a if fp64a >= threshold else 0.0
+    fp32a = fp32a if fp32a >= threshold else 0.0
+    fp16a = fp16a if fp16a >= threshold else 0.0
 
-    def metric_intensities(self, metrics: MetricValues) -> dict[str, float]:
-        """Calculate all intensity metrics"""
-        if metrics.gract == 0:
-            return {
-                "drama_gract": 0.0,
-                "tenso_gract": 0.0,
-                "fp64a_gract": 0.0,
-                "fp32a_gract": 0.0,
-                "fp16a_gract": 0.0,
-                "smocc_gract": 0.0,
-            }
+    total = fp64a + fp32a + fp16a
 
-        return {
-            "drama_gract": metrics.drama / metrics.gract,
-            "tenso_gract": metrics.tenso / metrics.gract,
-            "fp64a_gract": metrics.fp64a / metrics.gract,
-            "fp32a_gract": metrics.fp32a / metrics.gract,
-            "fp16a_gract": metrics.fp16a / metrics.gract,
-            "smocc_gract": metrics.smocc / metrics.gract,
-        }
+    # If total is 0 (and TENSO > 0.01, this is guaranteed in other function), give equal weights
+    if total == 0:
+        return {"tf64": 1 / 3, "tf32": 1 / 3, "tf16": 1 / 3}
+
+    return {"tf64": fp64a / total, "tf32": fp32a / total, "tf16": fp16a / total}
 
 
-class TimeCalculator:
-    """Handles time-related calculations"""
-
-    def __init__(self, sample_interval_ms: float, ref_gpu: GPU):
-        self.sample_intv = sample_interval_ms / 1000
-        self.gpu = ref_gpu
-
-    def calc_components_sg(self, metrics: MetricValues) -> TimeComponents:
-        """Calculate time components from metrics"""
-        t_flop = self.sample_intv * metrics.get_flop_sum()
-        t_dram = self.sample_intv * metrics.drama
-        t_kernel = self.sample_intv * metrics.gract
-        t_pcie = (
-            self.sample_intv
-            * (metrics.pcitx + metrics.pcirx)
-            / (self.gpu.get_specs("pcie_bw") * 1e9)
-        )
-        t_othernode = max(self.sample_intv * (1 - metrics.gract), 0)
-
-        return TimeComponents(
-            t_flop=t_flop,
-            t_dram=t_dram,
-            t_kernel=t_kernel,
-            t_pcie=t_pcie,
-            t_nvlink=0,
-            t_othernode=t_othernode,
-        )
-
-    def calc_components_mg(self, metrics: MetricValues) -> TimeComponents:
-        """Calculate time components from metrics"""
-        t_flop = self.sample_intv * metrics.get_flop_sum()
-        t_dram = self.sample_intv * metrics.drama
-        t_kernel = self.sample_intv * metrics.gract
-        t_pcie = (
-            self.sample_intv
-            * (metrics.pcitx + metrics.pcirx)
-            / (self.gpu.get_specs("pcie_bw") * 1e9)
-        )
-        t_nvlink = (
-            self.sample_intv
-            * (metrics.nvltx + metrics.nvlrx)
-            / (self.gpu.get_specs("nvlink_bw") * 1e9)
-        )
-
-        t_othernode = max(self.sample_intv * (1 - metrics.gract) - t_nvlink, 0)
-
-        return TimeComponents(
-            t_flop=t_flop,
-            t_dram=t_dram,
-            t_kernel=t_kernel,
-            t_pcie=t_pcie,
-            t_nvlink=t_nvlink,
-            t_othernode=t_othernode,
-        )
-
-    def get_time_slice(
-        self,
-        overall_runtime_ms: float,
-        start_ts: float | None,
-        end_ts: float | None,
-        data_length: int,
-    ) -> TimeSlice:
-        """Calculate time slice indices"""
-        finish_idx = min(int(overall_runtime_ms / (self.sample_intv * 1000)), data_length)
-        start_idx = int((start_ts or 0) / (self.sample_intv * 1000))
-
-        if end_ts is not None:
-            end_idx = min(finish_idx, int(end_ts / (self.sample_intv * 1000)))
-            if start_idx > end_idx:
-                raise ValueError("End timestamp is earlier than start timestamp")
-        else:
-            end_idx = finish_idx
-
-        return TimeSlice(start_idx=start_idx, end_idx=end_idx)
-
-
-class HostScaleCalculator:
+class HostScaler:
     """Calculates scale factors for host"""
 
     def __init__(self, ref_host: Host, tgt_host: Host):
@@ -114,13 +30,13 @@ class HostScaleCalculator:
         self._precompute_common_ratios()
 
     def _precompute_common_ratios(self):
-        cpu_clock_ratio_mid_ref = np.mean(
+        cpu_clock_ratio_ref = np.mean(
             [self.ref_host.get_specs("cpu_clock_base"), self.ref_host.get_specs("cpu_clock_boost")]
         )
-        cpu_clock_ratio_mid_tgt = np.mean(
+        cpu_clock_ratio_tgt = np.mean(
             [self.tgt_host.get_specs("cpu_clock_base"), self.tgt_host.get_specs("cpu_clock_boost")]
         )
-        self.cpu_clock_ratio = cpu_clock_ratio_mid_tgt / cpu_clock_ratio_mid_ref
+        self.cpu_clock_ratio = cpu_clock_ratio_tgt / cpu_clock_ratio_ref
 
         # self.cpu_clock_ratio = self._get_ratio("cpu_clock_boost")
         self.dram_ratio = self._get_ratio("mem_bw")
@@ -131,14 +47,14 @@ class HostScaleCalculator:
         """Helper to compute target/reference ratio for a given spec"""
         return self.tgt_host.get_specs(spec) / self.ref_host.get_specs(spec)
 
-    def othernode_scale(self, cores_alloc: str) -> float:
+    def host_scale(self, cores_alloc: str) -> float:
         if cores_alloc == "same":
             return self.cpu_clock_ratio
         else:
             return self.cpu_clock_ratio * self.cpu_cores_ratio
 
 
-class GPUScaleCalculator:
+class GpuScaler:
     """Calculates computational intensities"""
 
     INTENSITY_THRESHOLD = 0.01
@@ -203,7 +119,7 @@ class GPUScaleCalculator:
         """Compute k_smocc value for given warps and GPU"""
         return warps * gpu.get_specs("num_sm") * gpu.get_specs("boost_clock")
 
-    def _compute_scale(
+    def _scale_metric(
         self, intensity_ref: float, ratio: float
     ) -> tuple[float, float, float, float]:
         """Generic method to compute scaling factors for any intensity metric"""
@@ -302,27 +218,3 @@ class GPUScaleCalculator:
         flop_tgt = tensor_tgt + sum(fp_tgts)
 
         return flop_tgt
-
-
-class TFWeightCalculator:
-    """Calculates weights for different tensor precisions based on FLOP metrics"""
-
-    THRESHOLD = 0.01
-
-    @staticmethod
-    def calculate_weights(fp64a: float, fp32a: float, fp16a: float) -> dict[str, float]:
-        """
-        Calculate weights for tf64, tf32, tf16 based on FP operations
-        """
-        # Apply threshold - treat values < 0.01 as 0
-        fp64a = fp64a if fp64a >= TFWeightCalculator.THRESHOLD else 0.0
-        fp32a = fp32a if fp32a >= TFWeightCalculator.THRESHOLD else 0.0
-        fp16a = fp16a if fp16a >= TFWeightCalculator.THRESHOLD else 0.0
-
-        total = fp64a + fp32a + fp16a
-
-        # If total is 0 (and TENSO > 0.01, this is guaranteed in other function), give equal weights
-        if total == 0:
-            return {"tf64": 1 / 3, "tf32": 1 / 3, "tf16": 1 / 3}
-
-        return {"tf64": fp64a / total, "tf32": fp32a / total, "tf16": fp16a / total}

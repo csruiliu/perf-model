@@ -1,11 +1,34 @@
 from dataclasses import dataclass
 
-import pandas as pd
+# Mapping of DCGM metrics name -> MetricValues field name.
+_ROW_FIELD_MAP = {
+    "GRACT": "gract",
+    "DRAMA": "drama",
+    "TENSO": "tenso",
+    "FP64A": "fp64a",
+    "FP32A": "fp32a",
+    "FP16A": "fp16a",
+    "SMOCC": "smocc",
+    "PCITX": "pcitx",
+    "PCIRX": "pcirx",
+    "NVLTX": "nvltx",
+    "NVLRX": "nvlrx",
+}
+
+# GRACT-normalized metrics -> source field on MetricValues.
+_GRACT_ATTRS = {
+    "drama_gract": "drama",
+    "tenso_gract": "tenso",
+    "fp64a_gract": "fp64a",
+    "fp32a_gract": "fp32a",
+    "fp16a_gract": "fp16a",
+    "smocc_gract": "smocc",
+}
 
 
 @dataclass
 class MetricValues:
-    """Container for extracted metric values from a row"""
+    """Data class for extracted metrics from a row"""
 
     gract: float = 0.0
     drama: float = 0.0
@@ -22,63 +45,24 @@ class MetricValues:
     @classmethod
     def from_row(cls, row, metrics: list[str]) -> "MetricValues":
         """Create MetricValues from a dataframe row"""
+        metric_set = set(metrics)
+
         return cls(
-            gract=getattr(row, "GRACT", 0.0) if "GRACT" in metrics else 0.0,
-            drama=getattr(row, "DRAMA", 0.0) if "DRAMA" in metrics else 0.0,
-            tenso=getattr(row, "TENSO", 0.0) if "TENSO" in metrics else 0.0,
-            fp64a=getattr(row, "FP64A", 0.0) if "FP64A" in metrics else 0.0,
-            fp32a=getattr(row, "FP32A", 0.0) if "FP32A" in metrics else 0.0,
-            fp16a=getattr(row, "FP16A", 0.0) if "FP16A" in metrics else 0.0,
-            smocc=getattr(row, "SMOCC", 0.0) if "SMOCC" in metrics else 0.0,
-            pcitx=getattr(row, "PCITX", 0.0) if "PCITX" in metrics else 0.0,
-            pcirx=getattr(row, "PCIRX", 0.0) if "PCIRX" in metrics else 0.0,
-            nvltx=getattr(row, "NVLTX", 0.0) if "NVLTX" in metrics else 0.0,
-            nvlrx=getattr(row, "NVLRX", 0.0) if "NVLRX" in metrics else 0.0,
+            **{
+                field: getattr(row, col, 0.0) if col in metric_set else 0.0
+                for col, field in _ROW_FIELD_MAP.items()
+            }
         )
 
     def get_flop_sum(self) -> float:
         """Sum of all FLOP-related metrics"""
         return self.tenso + self.fp64a + self.fp32a + self.fp16a
 
+    def gract_normalization(self) -> dict[str, float]:
+        """Calculate all metrics normalized by graphic engine active fraction (GRACT).
 
-@dataclass
-class TimeComponents:
-    """Container for calculated time components"""
-
-    t_flop: float = 0.0
-    t_dram: float = 0.0
-    t_kernel: float = 0.0
-    t_pcie: float = 0.0
-    t_nvlink: float = 0.0
-    t_othernode: float = 0.0
-
-    def to_dict(self) -> dict[str, float]:
-        """Convert to dictionary"""
-        return {
-            "t_flop": self.t_flop,
-            "t_dram": self.t_dram,
-            "t_kernel": self.t_kernel,
-            "t_pcie": self.t_pcie,
-            "t_nvlink": self.t_nvlink,
-            "t_othernode": self.t_othernode,
-        }
-
-
-@dataclass
-class TimeSlice:
-    """Container for time-based metrics with slicing functionality"""
-
-    start_idx: int = 0
-    end_idx: int | None = None
-
-    def slice_list(self, data: list) -> list:
-        """Apply slicing to a list"""
-        return data[self.start_idx : self.end_idx]
-
-    def slice_dict(self, data: dict[str, list]) -> dict[str, list]:
-        """Apply slicing to all lists in a dictionary"""
-        return {key: values[self.start_idx : self.end_idx] for key, values in data.items()}
-
-    def slice_dataframe(self, data: pd.DataFrame) -> pd.DataFrame:
-        """Apply slicing to a list"""
-        return data[self.start_idx : self.end_idx]
+        Returns zero if gract is 0 to avoid division errors.
+        """
+        if self.gract == 0:
+            return {key: 0.0 for key in _GRACT_ATTRS}
+        return {key: getattr(self, attr) / self.gract for key, attr in _GRACT_ATTRS.items()}
