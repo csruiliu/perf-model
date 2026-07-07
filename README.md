@@ -19,15 +19,17 @@ One exmaple to quickly run the DCGM-based model using the collected counters of 
 
 ```bash
 # in the root folder
-python3 -m counter_model.dcgm.modeling_dcgm_sg \
-    -f ./eval/bgw/results/BGW_EPSILON_45934168-a100-fp64/dcgm.d1000.45934168.0-0.out \
+python3 -m counter_model.dcgm.launcher \
+    -job_mode single \
+    --num_gpu 1 \
+    --dcgm_input ./eval/dcgm/bgw/pm/results/interval_1s/EPS_SMALL_FP64_55365897/dcgm.d1000.55365897.0-0.out \
     -d 1000 \
     -o 932000 \
     -rg A100-40 \
     -tg H100-SXM \
     -rh Perlmutter \
     -th Einsteinium-H100 \
-    -ca same \
+    --cores_alloc same \
     --metrics GRACT,SMOCC,TENSO,DRAMA,FP64A,FP32A,FP16A,PCITX,PCIRX,NVLTX,NVLRX
 ```
 
