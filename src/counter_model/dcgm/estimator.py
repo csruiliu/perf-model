@@ -6,7 +6,7 @@ import pandas as pd
 from counter_model.dcgm.gpu_metrics import MetricValues
 from counter_model.dcgm.gpu_time import TimeSlicer
 from counter_model.dcgm.scaler import GpuScaler, HostScaler, get_tf_weights
-from counter_model.dcgm.utils import ResultsFormatter
+from counter_model.dcgm.utils import print_target_results
 from counter_model.hw_config.hw_specs import GPU, Host
 
 
@@ -15,7 +15,6 @@ class BaseEstimator(ABC):
 
     def __init__(self, sample_interval_ms: float, ref_gpu: GPU):
         self.time_slicer = TimeSlicer(sample_interval_ms, ref_gpu)
-        self.formatter = ResultsFormatter()
 
     @abstractmethod
     def run(self, *args, **kwargs):
@@ -36,7 +35,7 @@ class SingleGpuEstimator(BaseEstimator):
         self.tgt_host = Host(host_name=args.tgt_host)
         super().__init__(args.sample_interval_ms, self.ref_gpu)
 
-    def run(self, dcgm_df: pd.DataFrame, args: argparse.Namespace):
+    def run(self, dcgm_df: pd.DataFrame, args: argparse.Namespace, is_printout: bool):
         """Predict performance on target hardware"""
         # Calculate target metrics
         target_metrics = self._scale_metrics(dcgm_df, args.metrics, args.cores_alloc)
@@ -50,10 +49,13 @@ class SingleGpuEstimator(BaseEstimator):
         )
 
         # Slice metrics
-        windowed_metrics = time_window.extract_from_dict(target_metrics)
+        ws = time_window.extract_from_dict(target_metrics)
 
         # Print predictions
-        self.formatter.print_target_results(windowed_metrics, self.tgt_gpu.get_name())
+        if is_printout:
+            print_target_results(ws, self.tgt_gpu.get_name())
+
+        return {level: float(sum(ws[f"t_total_{level}"])) for level in self.SMOCC_LEVELS}
 
     def _scale_metrics(
         self, dcgm_df: pd.DataFrame, metrics: list[str], cores_alloc: str
@@ -130,7 +132,3 @@ class SingleGpuEstimator(BaseEstimator):
             "fp32": gpu_scaler.fp32_scale(mv_gract_norm["fp32a_gract"]),
             "fp16": gpu_scaler.fp16_scale(mv_gract_norm["fp16a_gract"]),
         }
-
-
-class MultiGpuEstimator(BaseEstimator):
-    pass

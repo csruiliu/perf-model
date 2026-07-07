@@ -1,8 +1,11 @@
 import argparse
+import os
 
+from counter_model.dcgm.analyzer import SystemWideAnalyzer
 from counter_model.dcgm.estimator import SingleGpuEstimator
 from counter_model.dcgm.job_parser import JobParser
 from counter_model.dcgm.profiler import SingleGpuProfiler
+from counter_model.dcgm.utils import plot_speedup_distribution
 
 
 class Dispatcher:
@@ -31,11 +34,11 @@ class Dispatcher:
 
         # Create and run reference profiler
         ref_profiler = SingleGpuProfiler(self.args.sample_interval_ms, self.args.ref_gpu)
-        ref_profiler.run(profiled_df, self.args)
+        ref_profiler.run(profiled_df, self.args, is_printout=True)
         # Create target estimator and run if specified
         if self.args.tgt_gpu:
             tgt_estimator = SingleGpuEstimator(self.args)
-            tgt_estimator.run(profiled_df, self.args)
+            tgt_estimator.run(profiled_df, self.args, is_printout=True)
 
     def single_job_multi_gpu(self):
         pass
@@ -43,17 +46,12 @@ class Dispatcher:
     def multi_job_single_gpu(self):
         job_parser = JobParser(self.args.dcgm_input, self.args.metrics)
         job_to_df = job_parser.parsing_multi_job(num_gpu=1)
-        """
-        for job_id, profiled_df in job_to_df.items():
-            if profiled_df.empty:
-                print(f"Job {job_id}: no data after cleaning, skipping.")
-                continue
+        gpu_tag = self.args.tgt_gpu
 
-            # Create and run reference profiler (same logic as single-job path).
-            ref_profiler = SingleGpuProfiler(self.args.sample_interval_ms, self.args.ref_gpu)
-            ref_profiler.run(profiled_df, self.args)
-        """
-        pass
+        analyzer = SystemWideAnalyzer(self.args)
+        result_df = analyzer.run(job_to_df)
+        speedup_dist_fig_path = os.path.join(self.args.plot_dir, f"speedup_dist_{gpu_tag}.png")
+        plot_speedup_distribution(result_df, gpu_name=gpu_tag, outpath=speedup_dist_fig_path)
 
     def multi_job_multi_gpu(self):
         pass

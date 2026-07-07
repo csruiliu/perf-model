@@ -30,9 +30,13 @@ def parse_arguments() -> argparse.Namespace:
 
     # --- the two mode axes (node is always single) ---
     parser.add_argument(
-        "--job_mode", required=True, choices=["single", "multi"], help="Single-job or multi-job"
+        "--job_mode",
+        type=str,
+        required=True,
+        choices=["single", "multi"],
+        help="Single-job or multi-job",
     )
-    parser.add_argument("--num_gpu", type=int, help="[multi-gpu] Number of GPUs")
+    parser.add_argument("--num_gpu", type=int, required=True, help="[multi-gpu] Number of GPUs")
 
     # --- shared ---
     parser.add_argument(
@@ -42,7 +46,7 @@ def parse_arguments() -> argparse.Namespace:
         help="DCGM input: file (.txt, .out, .pkl) or folder path",
     )
     parser.add_argument("-d", "--sample_interval_ms", type=int, required=True)
-    parser.add_argument("-o", "--overall_runtime_ms", type=int, required=True)
+    parser.add_argument("-o", "--overall_runtime_ms", type=int, default=None)
     parser.add_argument("-st", "--start_timestamp", type=int, default=0)
     parser.add_argument("-et", "--end_timestamp", type=int, default=None)
     parser.add_argument("-rg", "--ref_gpu", type=str, required=True)
@@ -52,8 +56,16 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--metrics", type=lambda s: s.split(","), required=True)
     parser.add_argument("--cores_alloc", choices=["same", "all"], help="CPU Cores Allocation")
 
-    # --- conditionally-required ---
-    parser.add_argument("--agg_interval_ms", type=int, help="[multi-gpu] Aggregation interval (ms)")
+    # --- for multi-gpu ---
+    parser.add_argument("--agg_interval_ms", type=int, help="[Multi-GPU] Aggregation interval (ms)")
+
+    # --- for multi-job ---
+    parser.add_argument(
+        "--plot_dir",
+        type=str,
+        default=".",
+        help="Directory for system-wide figure outputs (default: current dir)",
+    )
 
     args = parser.parse_args()
     _validate(parser, args)
@@ -65,6 +77,11 @@ def _validate(parser, args):
     required = {}
     if args.num_gpu > 1:
         required.update({"agg_interval_ms": args.agg_interval_ms})
+
+    # Multi-job single-GPU system-wide analysis needs a target GPU.
+    # Target GPU is required for analysis
+    if args.job_mode == "multi":
+        required.update({"tgt_gpu": args.tgt_gpu})
 
     missing = [n for n, v in required.items() if v is None]
     if missing:
