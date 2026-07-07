@@ -42,7 +42,17 @@ class Dispatcher:
 
     def multi_job_single_gpu(self):
         job_parser = JobParser(self.args.dcgm_input, self.args.metrics)
-        job_parser.parsing_multi_job(num_gpu=1)
+        job_to_df = job_parser.parsing_multi_job(num_gpu=1)
+        """
+        for job_id, profiled_df in job_to_df.items():
+            if profiled_df.empty:
+                print(f"Job {job_id}: no data after cleaning, skipping.")
+                continue
+
+            # Create and run reference profiler (same logic as single-job path).
+            ref_profiler = SingleGpuProfiler(self.args.sample_interval_ms, self.args.ref_gpu)
+            ref_profiler.run(profiled_df, self.args)
+        """
         pass
 
     def multi_job_multi_gpu(self):

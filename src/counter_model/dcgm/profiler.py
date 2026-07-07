@@ -80,23 +80,3 @@ class SingleGpuProfiler(BaseProfiler):
         membw = dram_sum / len(profiled_df)
 
         self.formatter.print_reference_results(windowed_results, flops, membw, self.gpu.get_name())
-
-
-class MultiGpuProfiler(BaseProfiler):
-    """Profiles performance on reference hardware for multiple GPUs"""
-
-    def __init__(self, sample_interval_ms: float, gpu_name: str):
-        self.gpu = GPU(gpu_name=gpu_name)
-        super().__init__(sample_interval_ms, self.gpu)
-
-    def run(
-        self,
-        gpu_dfs: list[pd.DataFrame],
-        metrics: list[str],
-        overall_runtime_ms: float,
-        agg_interval_ms: float,
-        start_ts: float | None,
-        end_ts: float | None,
-        tensor_prec: str,
-    ):
-        pass

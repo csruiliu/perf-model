@@ -1,6 +1,5 @@
 import pickle
 import re
-from pathlib import Path
 
 import pandas as pd
 
@@ -20,10 +19,10 @@ class JobParser:
         "nersc_ldms_dcgm_fp16_active": "FP16A",
         "nersc_ldms_dcgm_fp32_active": "FP32A",
         "nersc_ldms_dcgm_fp64_active": "FP64A",
-        "nersc_ldms_dcgm_nvlink_rx_bytes": "NVRX",
-        "nersc_ldms_dcgm_nvlink_tx_bytes": "NVTX",
-        "nersc_ldms_dcgm_pcie_rx_bytes": "PCRX",
-        "nersc_ldms_dcgm_pcie_tx_bytes": "PCTX",
+        "nersc_ldms_dcgm_nvlink_rx_bytes": "NVLRX",
+        "nersc_ldms_dcgm_nvlink_tx_bytes": "NVLTX",
+        "nersc_ldms_dcgm_pcie_rx_bytes": "PCIRX",
+        "nersc_ldms_dcgm_pcie_tx_bytes": "PCITX",
     }
 
     def __init__(self, dcgm_file: str, metric_names: list[str]):
@@ -75,31 +74,37 @@ class JobParser:
     # ------------------------------------------------------------------ #
     # Multi-job: read a PKL file -> {job_id: DataFrame}
     # ------------------------------------------------------------------ #
-    def parsing_multi_job(self) -> dict[str, pd.DataFrame]:
-        """Reads a PKL file containing {job_id: DataFrame}."""
-        path = Path(self.dcgm_file)
-        if not path.is_file():
-            raise FileNotFoundError(f"PKL file not found: {self.dcgm_file}")
-        if path.suffix.lower() != ".pkl":
-            raise ValueError(f"Expected a .pkl file, got: {self.dcgm_file}")
+    def parsing_multi_job(self, num_gpu: int) -> dict[str, pd.DataFrame]:
+        """Read a PKL file containing {job_id: dcgm_df} and return a dict of
+        cleaned/renamed DataFrames ready for the profiler/estimator.
 
-        with open(path, "rb") as f:
-            data = pickle.load(f)
+        Each raw dcgm_df contains data for 4 GPUs, but only one GPU has
+        non-zero activity (single-GPU jobs). We identify and keep that GPU.
+        """
+        print(
+            f"Processing multi-job PKL file (expecting {num_gpu} active GPU(s)/job): "
+            f"{self.dcgm_file}"
+        )
 
-        if not isinstance(data, dict):
-            raise ValueError(
-                f"PKL file must contain a dict of {{job_id: DataFrame}}, got {type(data).__name__}"
-            )
+        with open(self.dcgm_file, "rb") as f:
+            job_to_df: dict = pickle.load(f)
+
+        print(f"Loaded {len(job_to_df)} job(s) from PKL file")
 
         processed: dict[str, pd.DataFrame] = {}
-        for job_id, df in data.items():
-            if not isinstance(df, pd.DataFrame):
-                raise ValueError(
-                    f"Value for job '{job_id}' must be a DataFrame, got {type(df).__name__}"
-                )
-            processed[job_id] = self._preprocess_job_data(df)
+        skipped: list = []
 
-        print(f"Loaded {len(processed)} jobs from {self.dcgm_file}")
+        for job_id, raw_df in job_to_df.items():
+            try:
+                cleaned = self._process_pkl_job(job_id, raw_df, num_gpu)
+            except ValueError as exc:
+                print(f"Warning: skipping job {job_id}: {exc}")
+                skipped.append(job_id)
+                continue
+
+            processed[job_id] = cleaned
+
+        print(f"Successfully processed {len(processed)} job(s); skipped {len(skipped)} job(s)")
         return processed
 
     # ------------------------------------------------------------------ #
@@ -204,35 +209,78 @@ class JobParser:
     # ------------------------------------------------------------------ #
     # Multi-job helper (PKL DataFrame preprocessing)
     # ------------------------------------------------------------------ #
-    def _preprocess_job_data(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Preprocess a job's DCGM DataFrame from the PKL file."""
-        df = df.copy()
+    def _process_pkl_job(self, job_id, raw_df: pd.DataFrame, num_gpu: int) -> pd.DataFrame:
+        """Clean a single raw dcgm_df from the PKL file.
 
-        if "timestamp" in df.columns:
-            df["timestamp_1s"] = df["timestamp"] // 1000
-            df["timestamp_10s"] = df["timestamp"] // 10000
+        Steps:
+          1. Identify the active (non-zero) GPU(s).
+          2. Keep only that GPU's rows.
+          3. Rename the long DCGM column names to the short names.
+          4. Select and order the requested metric columns.
+        """
+        if not isinstance(raw_df, pd.DataFrame):
+            raise ValueError(f"expected a DataFrame, got {type(raw_df)}")
 
-        cols_to_drop = [
-            "timestamp",
-            "nersc_ldms_dcgm_power_usage",
-            "nersc_ldms_dcgm_total_energy_consumption",
-            "nersc_ldms_dcgm_tensor_hmma_active",
-        ]
-        df.drop(cols_to_drop, axis=1, inplace=True, errors="ignore")
+        if raw_df.empty:
+            raise ValueError("empty DataFrame")
 
-        df.rename(columns=self.COLUMN_RENAME_MAP, inplace=True)
+        active_gpu_ids = self._identify_active_gpus(raw_df)
 
-        metric_columns = ["FP64A", "FP32A", "FP16A", "TENSO", "DRAMA", "GRACT"]
-        filter_mask = pd.Series(True, index=df.index)
-        for col in metric_columns:
-            if col in df.columns:
-                filter_mask &= df[col].between(0, 1)
+        if not active_gpu_ids:
+            raise ValueError("no active (non-zero) GPU found")
 
-        filtered_df = df.loc[filter_mask].copy()
+        if len(active_gpu_ids) != num_gpu:
+            raise ValueError(
+                f"expected {num_gpu} active GPU(s), found {len(active_gpu_ids)}: {active_gpu_ids}"
+            )
 
-        if "PCRX" in filtered_df.columns and "PCTX" in filtered_df.columns:
-            filtered_df["PCIE_TRX"] = filtered_df["PCRX"] + filtered_df["PCTX"]
-        if "NVRX" in filtered_df.columns and "NVTX" in filtered_df.columns:
-            filtered_df["NVLINK_TRX"] = filtered_df["NVRX"] + filtered_df["NVTX"]
+        active_gpu_id = active_gpu_ids[0]
+        gpu_df = raw_df[raw_df["gpu_id"] == active_gpu_id].copy()
 
-        return filtered_df
+        # Keep only mapped columns, then rename long -> short names.
+        keep_cols = [c for c in gpu_df.columns if c in self.COLUMN_RENAME_MAP]
+        gpu_df = gpu_df[keep_cols].rename(columns=self.COLUMN_RENAME_MAP)
+
+        # Validate all requested metrics are available after renaming.
+        missing = [m for m in self.metric_names if m not in gpu_df.columns]
+        if missing:
+            raise ValueError(f"missing required metric column(s) after renaming: {missing}")
+
+        # Select and order exactly the requested metrics (mirrors the text path,
+        # whose DataFrame columns == self.metric_names).
+        result_df = gpu_df[self.metric_names].reset_index(drop=True)
+
+        # Ensure numeric dtype (raw PKL may store objects / strings / N/A).
+        result_df = result_df.apply(pd.to_numeric, errors="coerce").fillna(0.0)
+
+        print(f"Job {job_id}: active GPU {active_gpu_id}, {len(result_df)} rows")
+        self._count_zero(result_df)
+        return result_df
+
+    def _identify_active_gpus(self, raw_df: pd.DataFrame) -> list:
+        """Return the list of gpu_ids whose data is not entirely zero.
+
+        A single-GPU job's raw_df holds 4 GPUs; only the one that ran the job
+        has non-zero activity. We detect activity using the core activity
+        metrics rather than counters that may be non-zero even when idle
+        (e.g. temperature, memory clock, free framebuffer).
+        """
+        if "gpu_id" not in raw_df.columns:
+            raise ValueError("raw DataFrame has no 'gpu_id' column")
+
+        # Activity-based columns are the reliable signal of "this GPU ran work".
+        # Prefer gr_engine_active; fall back to a set of activity metrics.
+        activity_cols = [c for c in ["nersc_ldms_dcgm_gr_engine_active"] if c in raw_df.columns]
+
+        if not activity_cols:
+            raise ValueError("no known activity columns found to identify the active GPU")
+
+        active_gpu_ids = []
+        for gpu_id, group in raw_df.groupby("gpu_id"):
+            numeric = group[activity_cols].apply(pd.to_numeric, errors="coerce")
+            # A GPU is "active" if any activity metric has a meaningful non-zero
+            # value somewhere in its time series.
+            if (numeric.abs() > 0.01).any().any():
+                active_gpu_ids.append(gpu_id)
+
+        return sorted(active_gpu_ids)

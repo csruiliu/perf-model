@@ -63,7 +63,7 @@ def parse_arguments() -> argparse.Namespace:
 def _validate(parser, args):
     """Requirements attach to an axis, not to a specific mode combination."""
     required = {}
-    if args.job_mode == "multi":
+    if args.num_gpu > 1:
         required.update({"agg_interval_ms": args.agg_interval_ms})
 
     missing = [n for n, v in required.items() if v is None]

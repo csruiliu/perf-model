@@ -130,3 +130,7 @@ class SingleGpuEstimator(BaseEstimator):
             "fp32": gpu_scaler.fp32_scale(mv_gract_norm["fp32a_gract"]),
             "fp16": gpu_scaler.fp16_scale(mv_gract_norm["fp16a_gract"]),
         }
+
+
+class MultiGpuEstimator(BaseEstimator):
+    pass
