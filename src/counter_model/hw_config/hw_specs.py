@@ -43,7 +43,7 @@ GPUSpec = {
     },
     "RTX8000": {
         "fp64": 0.51, "tf64": 0, "fp32": 16.31, "tf32": 0, "fp16": 32.62, "tf16": 130.5,
-        "mem_bw": 672, "pcie_bw": 15.75, "nvlink_bw": 100, "l2_cache": 6,
+        "mem_bw": 672, "pcie_bw": 32, "nvlink_bw": 100, "l2_cache": 6,
         "base_clock": 1395, "boost_clock": 1770, "mem_clock": 1750,
         "max_warps_sm": 32, "reg_size_sm": 256, "shmem_sm": 96, "num_sm": 72
     },
