@@ -16,7 +16,7 @@ export OMP_NUM_THREADS=1
 export OMP_PLACES=cores
 export OMP_PROC_BIND=spread
 
-podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN -p 5555:5555 nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
+podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN -p 5556:5556 nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
 
 # create results directory if not exist
 if [ ! -d "../results" ]; then
