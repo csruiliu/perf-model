@@ -25,19 +25,17 @@ fi
 
 export RESULTS_DIR=../results/BABELSTREAM_${SLURM_JOBID}
 
-export DCGM_SAMPLE_RATE=1000
+export DCGM_DELAY=1000
 
 #Array size must be a multiple of 1024
-export ARRAYSIZE=100663296
-export NUMTIMES=100000 
+export ARRAYSIZE=268435456
+export NUMTIMES=5000 
 export BABELSTREAM="/pscratch/sd/r/ruiliu/BabelStream-5.0/build/cuda-stream"
 
 #run the application:
-start=$(date +%s.%N)
-dcgm_delay=${DCGM_SAMPLE_RATE} srun ./wrap_dcgmi_container.sh $BABELSTREAM -s $ARRAYSIZE -n $NUMTIMES \
-	> ${RESULTS_DIR}/"$prec"babelstream-${SLURM_JOBID}.dcgmi
-end=$(date +%s.%N)
-elapsed=$(printf "%s - %s\n" $end $start | bc -l)
-printf "Elapsed Time: %.2f seconds\n" $elapsed > ${RESULTS_DIR}/"$prec"babelstream_d${DCGM_SAMPLE_RATE}_runtime.out
+start_time=$(date +%s.%N)
+srun ./wrap_dcgmi_container.sh $BABELSTREAM -s $ARRAYSIZE -n $NUMTIMES > ${RESULTS_DIR}/babelstream-${SLURM_JOBID}.dcgmi
+end_time=$(date +%s.%N)
+elapsed=$(printf "%s - %s\n" $end_time $start_time | bc -l)
 
-dcgm_delay=1000 ./wrap_dcgmi_container.sh $BABELSTREAM -s $ARRAYSIZE -n $NUMTIMES > ${RESULTS_DIR}/babelstream-${SLURM_JOBID}.dcgmi
+printf "Elapsed Time: %.2f seconds\n" $elapsed > ${RESULTS_DIR}/runtime.out
