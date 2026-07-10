@@ -40,4 +40,4 @@ end=$(date +%s.%N)
 elapsed=$(printf "%s - %s\n" $end $start | bc -l)
 printf "Elapsed Time: %.2f seconds\n" $elapsed > ${RESULTS_DIR}/"$prec"babelstream_d${DCGM_SAMPLE_RATE}_runtime.out
 
-dcgm_delay=1000 ./wrap_dcgmi_container.sh $BABELSTREAM -s $ARRAYSIZE -n $NUMTIMES > /babelstream-${SLURM_JOBID}.dcgmi
+dcgm_delay=1000 ./wrap_dcgmi_container.sh $BABELSTREAM -s $ARRAYSIZE -n $NUMTIMES > ${RESULTS_DIR}/babelstream-${SLURM_JOBID}.dcgmi
