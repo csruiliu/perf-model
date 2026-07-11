@@ -1,15 +1,8 @@
 #!/bin/bash
-#Usage:  dcgm_delay=1000 srun wrap_dcgmi.sh
-#   or:                  srun wrap_dcgmi.sh
-
 
 #sampling interval (ms)
-if [ -z ${dcgm_delay+x} ]; then
-    dcgm_delay=1000
-    #echo "dcgm_delay not set; using default: $dcgm_delay"
-else
-    : #echo "dcgm_delay set by user: $dcgm_delay"
-fi
+: ${DCGM_DELAY:=42}
+echo "DCGM_DELAY: $DCGM_DELAY"
 
 #use `dcgmi dmon -l` to get the list of available metrics and their field_id
 #comment/uncomment metrics as deeded
@@ -53,15 +46,12 @@ dcgm_metrics+="1012," #nvlink_rx_bytes
 
 dcgm_metrics="${dcgm_metrics%?}"
 
-dcgm_outfile=dcgm.d$dcgm_delay.$SLURM_JOB_ID.$SLURM_STEP_ID-$SLURM_NODEID.out
+dcgm_outfile=dcgm.d$DCGM_DELAY.$SLURM_JOB_ID.$SLURM_STEP_ID-$SLURM_NODEID.out
 
 if [[ $SLURM_LOCALID -eq 0 ]]; then
     # For Perlmutter
-    podman-hpc exec -it dcgm-container dcgmi dmon -d $dcgm_delay -i 0 -e $dcgm_metrics > $RESULTS_DIR/$dcgm_outfile &
+    podman-hpc exec -it dcgm-container dcgmi dmon -d $DCGM_DELAY -i 0 -e $dcgm_metrics > $RESULTS_DIR/$dcgm_outfile &
     
-    # For Lawrencium, make sure the GPU index before using
-    singularity exec instance://dcgm-instance dcgmi dmon -d $dcgm_delay -i 6 -e $dcgm_metrics > ${RESULTS_DIR}/$dcgm_outfile &
-
     dcgmi_pid=$!
 fi
 
@@ -71,3 +61,4 @@ if [[ $SLURM_LOCALID -eq 0 ]]; then
     kill -9 $dcgmi_pid
     wait $! 2>/dev/null
 fi
+
