@@ -9,9 +9,9 @@
 #SBATCH -A nstaff
 #SBATCH --exclusive
 #SBATCH --perf=generic
-#SBATCH -o ../results/GEMM_%j/GEMM_%j.out
+#SBATCH -o ../results/DGEMM_%j/GEMM_%j.out
 
-podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN -p 5555:5555 nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
+podman-hpc run -d -it --name dcgm-container --rm --gpu --cap-add SYS_ADMIN -p 5556:5556 nvcr.io/nvidia/cloud-native/dcgm:4.2.3-1-ubuntu22.04
 
 #OpenMP settings:
 export OMP_NUM_THREADS=1
@@ -23,17 +23,15 @@ if [ ! -d "../results" ]; then
   mkdir ../results
 fi
 
-export RESULTS_DIR=../results/GEMM_${SLURM_JOBID}
+export RESULTS_DIR=../results/DGEMM_${SLURM_JOBID}
 
-export DCGM_SAMPLE_RATE=1000
+export DCGM_DELAY=1000
 
-for prec in D S H I; do
-#run the application:
-start=$(date +%s.%N)
-dcgm_delay=${DCGM_SAMPLE_RATE} srun --cpu_bind=cores ./wrap_dcgmi.sh ./gemm.x 0 32768 100 1.0 1.0 $prec \
-	> ${RESULTS_DIR}/"$prec"gemm-${SLURM_JOBID}.dcgmi
-end=$(date +%s.%N)
-elapsed=$(printf "%s - %s\n" $end $start | bc -l)
-printf "Elapsed Time: %.2f seconds\n" $elapsed > ${RESULTS_DIR}/"$prec"gemm_d${DCGM_SAMPLE_RATE}_runtime.out
-done
+start_time=$(date +%s.%N)
+srun --cpu_bind=cores ./wrap_dcgmi_container.sh python py-dgemm.py --accelerator > ${RESULTS_DIR}/dgemm-${SLURM_JOBID}.dcgmi
+end_time=$(date +%s.%N)
+elapsed=$(printf "%s - %s\n" $end_time $start_time | bc -l)
+
+printf "Elapsed Time: %.2f seconds\n" $elapsed > ${RESULTS_DIR}/runtime.out
+
 
