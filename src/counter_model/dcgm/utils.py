@@ -16,20 +16,22 @@ def print_reference_results(metrics: dict[str, list[float]], flops: float, mem_b
     print(f"{'=' * 60}\n")
 
 
-def print_target_results(metrics: dict[str, list[float]], gpu: str):
+def print_target_results(
+    metrics: dict[str, list[float]], flops: dict[str, float], mem_bw: dict[str, float], gpu: str
+):
     """Print target hardware results, convert runtime(ms) to second"""
     print(f"\n{'=' * 60}")
     print(f"Target Hardware: {gpu}")
 
-    # print(f'Estimated TFLOPS [Lower SMOCC]: {flops.get("flop_smocc_lower"):.2f} GB/s')
-    # print(f'Estimated TFLOPS [Mid SMOCC]: {flops.get("flop_smocc_mid"):.2f} GB/s')
-    # print(f'Estimated TFLOPS [Upper SMOCC]: {flops.get("flop_smocc_upper"):.2f} GB/s')
-    # print(f'Estimated TFLOPS [Mock SMOCC]: {flops.get("flop_smocc_mock"):.2f} GB/s')
+    print(f"Estimated TFLOPS [Lower SMOCC]: {flops.get('flops_lower'):.2f} GB/s")
+    print(f"Estimated TFLOPS [Mid SMOCC]: {flops.get('flops_mid'):.2f} GB/s")
+    print(f"Estimated TFLOPS [Upper SMOCC]: {flops.get('flops_upper'):.2f} GB/s")
+    print(f"Estimated TFLOPS [Mock SMOCC]: {flops.get('flops_mock'):.2f} GB/s")
 
-    # print(f'Estimated GPU Memory Bandwidth [Lower SMOCC]: {mem_bw.get("dram_smocc_lower"):.2f} GB/s')
-    # print(f'Estimated GPU Memory Bandwidth [Mid SMOCC]: {mem_bw.get("dram_smocc_mid"):.2f} GB/s')
-    # print(f'Estimated GPU Memory Bandwidth [Upper SMOCC]: {mem_bw.get("dram_smocc_upper"):.2f} GB/s')
-    # print(f'Estimated GPU Memory Bandwidth [Mock SMOCC]: {mem_bw.get("dram_smocc_mock"):.2f} GB/s')
+    print(f"Estimated Memory Bandwidth [Lower SMOCC]: {mem_bw.get('dram_lower'):.2f} GB/s")
+    print(f"Estimated Memory Bandwidth [Mid SMOCC]: {mem_bw.get('dram_mid'):.2f} GB/s")
+    print(f"Estimated Memory Bandwidth [Upper SMOCC]: {mem_bw.get('dram_upper'):.2f} GB/s")
+    print(f"Estimated Memory Bandwidth [Mock SMOCC]: {mem_bw.get('dram_mock'):.2f} GB/s")
 
     print(f"\nEstimated Kernel Time [Lower SMOCC]: {sum(metrics['t_kernel_lower']) / 1000:.2f} s")
     print(f"Estimated Kernel Time [Mid SMOCC]:   {sum(metrics['t_kernel_mid']) / 1000:.2f} s")

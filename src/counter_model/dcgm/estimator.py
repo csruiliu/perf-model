@@ -1,6 +1,7 @@
 import argparse
 from abc import ABC, abstractmethod
 
+import numpy as np
 import pandas as pd
 
 from counter_model.dcgm.gpu_metrics import MetricValues
@@ -51,9 +52,13 @@ class SingleGpuEstimator(BaseEstimator):
         # Slice metrics
         ws = time_window.extract_from_dict(target_metrics)
 
+        # Calculate estimated FLOPS and memory bandwidth
+        est_flops = self._estimate_peak_rate(ws, "flops")
+        est_membw = self._estimate_peak_rate(ws, "dram")
+
         # Print predictions
         if is_printout:
-            print_target_results(ws, self.tgt_gpu.get_name())
+            print_target_results(ws, est_flops, est_membw, self.tgt_gpu.get_name())
 
         return {level: float(sum(ws[f"t_total_{level}"])) for level in self.SMOCC_LEVELS}
 
@@ -61,14 +66,15 @@ class SingleGpuEstimator(BaseEstimator):
         self, dcgm_df: pd.DataFrame, metrics: list[str], cores_alloc: str
     ) -> dict[str, list[float]]:
         """Calculate metrics for target hardware"""
-        time_results = ["t_kernel", "t_total"]
+        time_results = ["t_kernel", "t_total", "dram", "flops"]
 
         results = {f"{metric}_{key}": [] for metric in time_results for key in self.SMOCC_LEVELS}
 
+        # host and pcie time are not scaled by smocc
         results["t_host"] = []
         results["t_pcie"] = []
 
-        gpu_scaler = GpuScaler(self.ref_gpu, self.tgt_gpu)
+        gpu_scaler = GpuScaler(self.ref_gpu, self.tgt_gpu, self.SMOCC_LEVELS)
         host_scaler = HostScaler(self.ref_host, self.tgt_host)
 
         for row in dcgm_df.itertuples(index=False):
@@ -82,12 +88,16 @@ class SingleGpuEstimator(BaseEstimator):
                 mv_gract_norm["fp16a_gract"],
             )
 
+            tf_precisions = ("tf64", "tf32", "tf16")
+            tf_tgt = sum(tf_weights[p] * self.tgt_gpu.get_specs(p) for p in tf_precisions)
+            tf_ref = sum(tf_weights[p] * self.ref_gpu.get_specs(p) for p in tf_precisions)
+
             # Calculate time fraction on ref gpu
             time_frac_ref = self.time_slicer.time_fraction_single_gpu(mv)
 
             # Update SMOCC and calculate all scales
             gpu_scaler.update_smocc(mv_gract_norm["smocc_gract"])
-            kernel_metrics_tgt = self._scale_kernel_metrics(gpu_scaler, mv_gract_norm, tf_weights)
+            gpu_scaler.update_scale_kernel(mv_gract_norm, tf_weights)
 
             # PCIe Time
             t_pcie_tgt = time_frac_ref.t_pcie / gpu_scaler.pcie_scale()
@@ -96,39 +106,28 @@ class SingleGpuEstimator(BaseEstimator):
             # Other node time
             t_host_tgt = time_frac_ref.t_host / host_scaler.host_scale(cores_alloc)
             results["t_host"].append(t_host_tgt)
-
+            print(gpu_scaler.scale_smocc)
             # Process each SMOCC key
-            for i, key in enumerate(self.SMOCC_LEVELS):
-                # Calculate kernel scale (minimum of all constraints)
-                kernel_scale = min(
-                    x
-                    for x in [
-                        gpu_scaler.scale_smocc[key],
-                        kernel_metrics_tgt["dram"][i],
-                        kernel_metrics_tgt["tensor"][i],
-                        kernel_metrics_tgt["fp64"][i],
-                        kernel_metrics_tgt["fp32"][i],
-                        kernel_metrics_tgt["fp16"][i],
-                    ]
-                    if x != 0
-                )
-
+            for key in self.SMOCC_LEVELS:
                 # Calculate kernel and total time
-                t_kernel_tgt = time_frac_ref.t_kernel / kernel_scale
+                t_kernel_tgt = time_frac_ref.t_kernel / gpu_scaler.scale_kernel[key]
                 results[f"t_kernel_{key}"].append(t_kernel_tgt)
                 results[f"t_total_{key}"].append(t_kernel_tgt + t_pcie_tgt + t_host_tgt)
+                mem_bw_tgt = min(
+                    self.ref_gpu.get_specs("mem_bw")
+                    * mv_gract_norm["drama_gract"]
+                    * gpu_scaler.scale_smocc[key],
+                    self.tgt_gpu.get_specs("mem_bw"),
+                )
+                results[f"dram_{key}"].append(mem_bw_tgt)
+
+                flops_tgt = min(
+                    tf_ref * mv_gract_norm["tenso_gract"] * gpu_scaler.scale_smocc[key], tf_tgt
+                )
+                results[f"flops_{key}"].append(flops_tgt)
 
         return results
 
-    def _scale_kernel_metrics(
-        self, gpu_scaler: GpuScaler, mv_gract_norm: dict, tf_weights: dict
-    ) -> dict[str, tuple]:
-        """Calculate all scale factors in one place"""
-        # scale_calc.smocc_scale() need to be invoked first
-        return {
-            "dram": gpu_scaler.dram_scale(mv_gract_norm["drama_gract"]),
-            "tensor": gpu_scaler.tensor_scale_weighted(mv_gract_norm["tenso_gract"], tf_weights),
-            "fp64": gpu_scaler.fp64_scale(mv_gract_norm["fp64a_gract"]),
-            "fp32": gpu_scaler.fp32_scale(mv_gract_norm["fp32a_gract"]),
-            "fp16": gpu_scaler.fp16_scale(mv_gract_norm["fp16a_gract"]),
-        }
+    def _estimate_peak_rate(self, metrics: dict[str, list[float]], prefix: str) -> dict[str, float]:
+        """Generic method to calculate aggregated metrics (FLOPS or memory bandwidth)"""
+        return {f"{prefix}_{key}": np.mean(metrics[f"{prefix}_{key}"]) for key in self.SMOCC_LEVELS}

@@ -57,20 +57,64 @@ class HostScaler:
 class GpuScaler:
     """Calculates computational intensities"""
 
-    INTENSITY_THRESHOLD = 0.01
+    METRIC_THRESHOLD = 0.01
 
-    def __init__(self, ref_gpu: GPU, tgt_gpu: GPU):
+    def __init__(self, ref_gpu: GPU, tgt_gpu: GPU, smocc_levels: list[str]):
         self.ref_gpu = ref_gpu
         self.tgt_gpu = tgt_gpu
+        self.smocc_levels = smocc_levels
 
         # Initialize state
         self.cur_smocc = 0
         self.cur_warps_ref = 0
-        self.cur_warps_tgt = {"lower": 0, "mid": 0, "upper": 0, "mock": 0}
-        self.scale_smocc = {"lower": 0, "mid": 0, "upper": 0, "mock": 0}
+        self.cur_warps_tgt = {level: 0 for level in smocc_levels}
+        self.scale_smocc = {level: 0 for level in smocc_levels}
+        self.scale_kernel = {level: 0 for level in smocc_levels}
 
         # Precompute common ratios
         self._precompute_common_ratios()
+
+    def update_smocc(self, smocc: float):
+        self.cur_smocc = smocc
+        self._estimate_warps()
+
+        for key in self.scale_smocc.keys():
+            k_smocc_tgt = self._compute_k_smocc(self.cur_warps_tgt[key], self.tgt_gpu)
+            k_smocc_ref = self._compute_k_smocc(self.cur_warps_ref, self.ref_gpu)
+            if k_smocc_ref == 0 or k_smocc_tgt == 0:
+                self.scale_smocc[key] = np.inf
+            else:
+                self.scale_smocc[key] = k_smocc_tgt / k_smocc_ref
+
+    def update_scale_kernel(self, mv_gract_norm: dict, tf_weights: dict):
+        tf_precisions = ("tf64", "tf32", "tf16")
+        tf_tgt = sum(tf_weights[p] * self.tgt_gpu.get_specs(p) for p in tf_precisions)
+        tf_ref = sum(tf_weights[p] * self.ref_gpu.get_specs(p) for p in tf_precisions)
+
+        # Below-threshold intensities are treated as infinite (i.e. non-binding),
+        # so their ratio contribution collapses to 0 and won't drive the min.
+        gract_keys = ("tenso_gract", "drama_gract", "fp64a_gract", "fp32a_gract", "fp16a_gract")
+        for key in gract_keys:
+            if mv_gract_norm[key] < self.METRIC_THRESHOLD:
+                mv_gract_norm[key] = np.inf
+
+        # Candidate scale ratio per resource; the tightest one governs, ignore zeros
+        for level in self.smocc_levels:
+            self.scale_kernel[level] = min(
+                x
+                for x in [
+                    self.scale_smocc[level],
+                    tf_tgt / (tf_ref * mv_gract_norm["tenso_gract"]),
+                    self._get_ratio("mem_bw") / mv_gract_norm["drama_gract"],
+                    self._get_ratio("fp64") / mv_gract_norm["fp64a_gract"],
+                    self._get_ratio("fp32") / mv_gract_norm["fp32a_gract"],
+                    self._get_ratio("fp16") / mv_gract_norm["fp16a_gract"],
+                ]
+                if x != 0
+            )
+
+    def pcie_scale(self):
+        return self._get_ratio("pcie_bw")
 
     def _precompute_common_ratios(self):
         """Compute GPU spec ratios that don't depend on tensor precision"""
@@ -100,78 +144,18 @@ class GpuScaler:
         self.cur_warps_ref = min(self.cur_smocc * self.ref_max_warps, self.ref_max_warps)
 
         self.cur_warps_tgt["lower"] = min(
-            self.cur_warps_ref * self.reg_sm_limit,
-            self.cur_warps_ref * self.shmem_sm_limit,
-            self.tgt_max_warps,
+            self.cur_warps_ref * max(self.reg_sm_limit, self.shmem_sm_limit), self.tgt_max_warps
         )
 
         self.cur_warps_tgt["mid"] = min(
-            self.cur_warps_ref * (self.reg_sm_limit + self.shmem_sm_limit) * 0.5, self.tgt_max_warps
+            self.cur_warps_ref * (self.reg_sm_limit + self.shmem_sm_limit) / 2, self.tgt_max_warps
         )
 
         self.cur_warps_tgt["upper"] = min(
-            max(self.cur_warps_ref * self.reg_sm_limit, self.cur_warps_ref * self.shmem_sm_limit),
-            self.tgt_max_warps,
+            self.cur_warps_ref * max(self.reg_sm_limit, self.shmem_sm_limit), self.tgt_max_warps
         )
         self.cur_warps_tgt["mock"] = self.cur_warps_ref
 
     def _compute_k_smocc(self, warps: float, gpu: GPU) -> float:
         """Compute k_smocc value for given warps and GPU"""
         return warps * gpu.get_specs("num_sm") * gpu.get_specs("boost_clock")
-
-    def _compute_scale(
-        self, intensity_ref: float, ratio: float
-    ) -> tuple[float, float, float, float]:
-        """Generic method to compute scaling factors for any intensity metric"""
-        # this is important, make sure dcgm metrics that are too small will not be considered
-        if intensity_ref < self.INTENSITY_THRESHOLD:
-            return np.inf, np.inf, np.inf, np.inf
-
-        scale_factor = ratio / intensity_ref
-        return tuple(
-            min(self.scale_smocc[key], scale_factor) for key in ("lower", "mid", "upper", "mock")
-        )
-
-    def update_smocc(self, smocc: float):
-        self.cur_smocc = smocc
-        self._estimate_warps()
-
-        for key in self.scale_smocc.keys():
-            k_smocc_tgt = self._compute_k_smocc(self.cur_warps_tgt[key], self.tgt_gpu)
-            k_smocc_ref = self._compute_k_smocc(self.cur_warps_ref, self.ref_gpu)
-            if k_smocc_ref == 0 or k_smocc_tgt == 0:
-                self.scale_smocc[key] = np.inf
-            else:
-                self.scale_smocc[key] = k_smocc_tgt / k_smocc_ref
-
-    def tensor_scale_weighted(
-        self, tensor_ref: float, weights: dict[str, float]
-    ) -> tuple[float, float, float, float]:
-        """Calculate weighted tensor core scaling factors"""
-        tf_tgt = sum(
-            weights[prec] * self.tgt_gpu.get_specs(prec) for prec in ["tf64", "tf32", "tf16"]
-        )
-        tf_ref = sum(
-            weights[prec] * self.ref_gpu.get_specs(prec) for prec in ["tf64", "tf32", "tf16"]
-        )
-
-        return self._compute_scale(tensor_ref, tf_tgt / tf_ref)
-
-    def pcie_scale(self):
-        return self._get_ratio("pcie_bw")
-
-    def dram_scale(self, dram_ref: float) -> tuple[float, float, float]:
-        """Calculate DRAM bandwidth scaling factors"""
-        return self._compute_scale(dram_ref, self.bw_ratio)
-
-    def fp64_scale(self, fp64_ref: float) -> tuple[float, float, float, float]:
-        """Calculate FP64 scaling factors"""
-        return self._compute_scale(fp64_ref, self.fp64_ratio)
-
-    def fp32_scale(self, fp32_ref: float) -> tuple[float, float, float, float]:
-        """Calculate FP32 scaling factors"""
-        return self._compute_scale(fp32_ref, self.fp32_ratio)
-
-    def fp16_scale(self, fp16_ref: float) -> tuple[float, float, float, float]:
-        """Calculate FP16 scaling factors"""
-        return self._compute_scale(fp16_ref, self.fp16_ratio)
