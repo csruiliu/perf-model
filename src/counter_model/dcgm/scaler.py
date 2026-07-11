@@ -67,9 +67,9 @@ class GpuScaler:
         # Initialize state
         self.cur_smocc = 0
         self.cur_warps_ref = 0
-        self.cur_warps_tgt = {level: 0 for level in smocc_levels}
-        self.scale_smocc = {level: 0 for level in smocc_levels}
-        self.scale_kernel = {level: 0 for level in smocc_levels}
+        self.cur_warps_tgt = {level: 0.0 for level in smocc_levels}
+        self.scale_smocc = {level: 0.0 for level in smocc_levels}
+        self.scale_kernel = {level: 0.0 for level in smocc_levels}
 
         # Precompute common ratios
         self._precompute_common_ratios()
@@ -78,7 +78,7 @@ class GpuScaler:
         self.cur_smocc = smocc
         self._estimate_warps()
 
-        for key in self.scale_smocc.keys():
+        for key in self.smocc_levels:
             k_smocc_tgt = self._compute_k_smocc(self.cur_warps_tgt[key], self.tgt_gpu)
             k_smocc_ref = self._compute_k_smocc(self.cur_warps_ref, self.ref_gpu)
             if k_smocc_ref == 0 or k_smocc_tgt == 0:
@@ -98,20 +98,19 @@ class GpuScaler:
             if mv_gract_norm[key] < self.METRIC_THRESHOLD:
                 mv_gract_norm[key] = np.inf
 
+        scale_factors = [
+            tf_tgt / (tf_ref * mv_gract_norm["tenso_gract"]),
+            self._get_ratio("mem_bw") / mv_gract_norm["drama_gract"],
+            self._get_ratio("fp64") / mv_gract_norm["fp64a_gract"],
+            self._get_ratio("fp32") / mv_gract_norm["fp32a_gract"],
+            self._get_ratio("fp16") / mv_gract_norm["fp16a_gract"],
+        ]
+
         # Candidate scale ratio per resource; the tightest one governs, ignore zeros
         for level in self.smocc_levels:
-            self.scale_kernel[level] = min(
-                x
-                for x in [
-                    self.scale_smocc[level],
-                    tf_tgt / (tf_ref * mv_gract_norm["tenso_gract"]),
-                    self._get_ratio("mem_bw") / mv_gract_norm["drama_gract"],
-                    self._get_ratio("fp64") / mv_gract_norm["fp64a_gract"],
-                    self._get_ratio("fp32") / mv_gract_norm["fp32a_gract"],
-                    self._get_ratio("fp16") / mv_gract_norm["fp16a_gract"],
-                ]
-                if x != 0
-            )
+            scale_factors.append(self.scale_smocc[level])
+            self.scale_kernel[level] = min(x for x in scale_factors if x != 0)
+            scale_factors.pop()
 
     def pcie_scale(self):
         return self._get_ratio("pcie_bw")
@@ -144,7 +143,7 @@ class GpuScaler:
         self.cur_warps_ref = min(self.cur_smocc * self.ref_max_warps, self.ref_max_warps)
 
         self.cur_warps_tgt["lower"] = min(
-            self.cur_warps_ref * max(self.reg_sm_limit, self.shmem_sm_limit), self.tgt_max_warps
+            self.cur_warps_ref * min(self.reg_sm_limit, self.shmem_sm_limit), self.tgt_max_warps
         )
 
         self.cur_warps_tgt["mid"] = min(

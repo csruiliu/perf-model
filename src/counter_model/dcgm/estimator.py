@@ -106,11 +106,11 @@ class SingleGpuEstimator(BaseEstimator):
             # Other node time
             t_host_tgt = time_frac_ref.t_host / host_scaler.host_scale(cores_alloc)
             results["t_host"].append(t_host_tgt)
-            print(gpu_scaler.scale_smocc)
+
             # Process each SMOCC key
             for key in self.SMOCC_LEVELS:
                 # Calculate kernel and total time
-                t_kernel_tgt = time_frac_ref.t_kernel / gpu_scaler.scale_kernel[key]
+                t_kernel_tgt = time_frac_ref.t_kernel / gpu_scaler.scale_kernel.get(key)
                 results[f"t_kernel_{key}"].append(t_kernel_tgt)
                 results[f"t_total_{key}"].append(t_kernel_tgt + t_pcie_tgt + t_host_tgt)
                 mem_bw_tgt = min(
