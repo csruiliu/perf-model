@@ -34,7 +34,7 @@ export BABELSTREAM="/pscratch/sd/r/ruiliu/BabelStream-5.0/build/cuda-stream"
 
 #run the application:
 start_time=$(date +%s.%N)
-srun ./wrap_dcgmi_container.sh $BABELSTREAM -s $ARRAYSIZE -n $NUMTIMES > ${RESULTS_DIR}/babelstream-${SLURM_JOBID}.dcgmi
+srun ./wrap_dcgmi_container.sh $BABELSTREAM -s $ARRAYSIZE -n $NUMTIMES > ${RESULTS_DIR}/BABELSTREAM_${SLURM_JOBID}.out
 end_time=$(date +%s.%N)
 elapsed=$(printf "%s - %s\n" $end_time $start_time | bc -l)
 
