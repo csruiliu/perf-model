@@ -33,10 +33,12 @@ fi
 
 export RESULTS_DIR=../results/DGEMM_${SLURM_JOBID}
 
+PYTHON=/global/homes/r/ruiliu/.conda/envs/py-dgemm/bin/python
+
 export DCGM_DELAY=1000
 
 start_time=$(date +%s.%N)
-srun ./wrap_dcgmi_container.sh python py-dgemm.py --accelerator > ${RESULTS_DIR}/DGEMM_${SLURM_JOBID}.out
+srun ./wrap_dcgmi_container.sh $PYTHON py-dgemm.py --accelerator > ${RESULTS_DIR}/DGEMM_${SLURM_JOBID}.out
 end_time=$(date +%s.%N)
 elapsed=$(printf "%s - %s\n" $end_time $start_time | bc -l)
 
