@@ -37,7 +37,7 @@ export RESULTS_DIR=../results/DGEMM_${SLURM_JOB_ID}
 
 mkdir -p $RESULTS_DIR
 
-export DCGM_SAMPLE_RATE=1000
+export DCGM_DELAY=1000
 PYTHON_EXE=../common/py-dgemm.py
 
 start_time=$(date +%s.%N)
