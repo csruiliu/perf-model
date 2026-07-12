@@ -18,7 +18,7 @@ if [ ! -d "../results" ]; then
   mkdir ../results
 fi
 
-export RESULTS_DIR=../results/BABELSTREAM_${SLURM_JOBID}
+export RESULTS_DIR=../results/BABELSTREAM_${SLURM_JOB_ID}
 
 export DCGM_SAMPLE_RATE=1000
 
@@ -27,8 +27,10 @@ export ARRAYSIZE=100663296
 export NUMTIMES=100000 
 export BABELSTREAM="/pscratch/sd/r/ruiliu/BabelStream-5.0/build/cuda-stream"
 
+mkdir -p $RESULTS_DIR
+
 start=$(date +%s.%N)
-srun ./wrap_dcgmi_container.sh $BABELSTREAM -s $ARRAYSIZE -n $NUMTIMES > ${RESULTS_DIR}/babelstream-${SLURM_JOBID}.dcgmi
+srun --nodes=1 --ntasks=1 --cpus-per-task=2 ./wrap_dcgmi_container.sh $BABELSTREAM -s $ARRAYSIZE -n $NUMTIMES > ${RESULTS_DIR}/babelstream-${SLURM_JOB_ID}.out
 end=$(date +%s.%N)
 elapsed=$(printf "%s - %s\n" $end $start | bc -l)
 
