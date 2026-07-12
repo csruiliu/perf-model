@@ -20,11 +20,11 @@ fi
 
 export RESULTS_DIR=../results/BABELSTREAM_${SLURM_JOB_ID}
 
-export DCGM_SAMPLE_RATE=1000
+export DCGM_DELAY=1000
 
 #Array size must be a multiple of 1024
-export ARRAYSIZE=100663296
-export NUMTIMES=100000 
+export ARRAYSIZE=268435456
+export NUMTIMES=5000 
 export BABELSTREAM="/pscratch/sd/r/ruiliu/BabelStream-5.0/build/cuda-stream"
 
 mkdir -p $RESULTS_DIR
