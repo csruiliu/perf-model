@@ -17,11 +17,11 @@
 # module load miniforge3
 
 # conda create -n py-dgemm python=3.10 -y
-# conda init (you may need to logout the computing node by exit and re-login the compute node by ssh)
+# [optional] conda init (you may need to logout the computing node by exit and re-login the compute node by ssh)
 
-#conda activate py-dgemm
-#conda install numpy -y
-#conda install -c conda-forge cupy cuda-version=12.9 -y
+# conda activate py-dgemm
+# conda install numpy -y
+# conda install -c conda-forge cupy cuda-version=12.9 -y
 
 #OpenMP settings:
 export OMP_NUM_THREADS=1
