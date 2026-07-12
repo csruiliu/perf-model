@@ -31,12 +31,14 @@ if [ ! -d "../results" ]; then
   mkdir ../results
 fi
 
+PYTHON_EXE=../common/py-dgemm.py
+
 export RESULTS_DIR=../results/DGEMM_${SLURM_JOBID}
 
 export DCGM_DELAY=1000
 
 start_time=$(date +%s.%N)
-srun ./wrap_dcgmi_container.sh python py-dgemm.py --accelerator > ${RESULTS_DIR}/DGEMM_${SLURM_JOBID}.out
+srun ./wrap_dcgmi_container.sh python $PYTHON_EXE --niterations 1000 --nsize 16384 --accelerator > ${RESULTS_DIR}/DGEMM_${SLURM_JOBID}.out
 end_time=$(date +%s.%N)
 elapsed=$(printf "%s - %s\n" $end_time $start_time | bc -l)
 
