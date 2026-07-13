@@ -59,14 +59,6 @@ def parse_arguments() -> argparse.Namespace:
     # --- for multi-gpu ---
     parser.add_argument("--agg_interval_ms", type=int, help="[Multi-GPU] Aggregation interval (ms)")
 
-    # --- for multi-job ---
-    parser.add_argument(
-        "--plot_dir",
-        type=str,
-        default=".",
-        help="Directory for system-wide figure outputs (default: current dir)",
-    )
-
     args = parser.parse_args()
     _validate(parser, args)
     return args
