@@ -6,7 +6,6 @@ import pandas as pd
 from counter_model.dcgm.gpu_metrics import MetricValues
 from counter_model.dcgm.gpu_time import TimeSlicer
 from counter_model.dcgm.scaler import get_tf_weights
-from counter_model.dcgm.utils import print_reference_results
 from counter_model.hw_config.hw_specs import GPU
 
 
@@ -79,6 +78,21 @@ class SingleGpuProfiler(BaseProfiler):
         membw = dram_sum / len(profiled_df)
 
         if is_printout:
-            print_reference_results(ws, flops, membw, self.gpu.get_name())
+            self.print_reference_results(ws, flops, membw, self.gpu.get_name())
 
         return float(sum(ws["t_kernel"]) + sum(ws["t_pcie"]) + sum(ws["t_host"]))
+
+    def print_reference_results(
+        self, metrics: dict[str, list[float]], flops: float, mem_bw: float, gpu: str
+    ):
+        """Print reference hardware results, convert runtime(ms) to second"""
+        """No need to have total time"""
+        print(f"\n{'=' * 60}")
+        print(f"Reference Hardware: {gpu}\n")
+        print(f"Estimated TFLOPS: {flops:.2f}")
+        print(f"Estimated GPU Memory Bandwidth: {mem_bw:.2f} GB/s")
+
+        print(f"\nEstimated Kernel Time: {sum(metrics['t_kernel']) / 1000:.2f} s")
+        print(f"\nEstimated PCIe Time: {sum(metrics['t_pcie']) / 1000:.2f} s")
+        print(f"Estimated Host Time: {sum(metrics['t_host']) / 1000:.2f} s")
+        print(f"{'=' * 60}\n")

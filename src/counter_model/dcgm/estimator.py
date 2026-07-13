@@ -7,7 +7,6 @@ import pandas as pd
 from counter_model.dcgm.gpu_metrics import MetricValues
 from counter_model.dcgm.gpu_time import TimeSlicer
 from counter_model.dcgm.scaler import GpuScaler, HostScaler, get_tf_weights
-from counter_model.dcgm.utils import print_target_results
 from counter_model.hw_config.hw_specs import GPU, Host
 
 
@@ -58,7 +57,7 @@ class SingleGpuEstimator(BaseEstimator):
 
         # Print predictions
         if is_printout:
-            print_target_results(ws, est_flops, est_membw, self.tgt_gpu.get_name())
+            self.print_target_results(ws, est_flops, est_membw, self.tgt_gpu.get_name())
 
         return {level: float(sum(ws[f"t_total_{level}"])) for level in self.SMOCC_LEVELS}
 
@@ -131,3 +130,44 @@ class SingleGpuEstimator(BaseEstimator):
     def _estimate_peak_rate(self, metrics: dict[str, list[float]], prefix: str) -> dict[str, float]:
         """Generic method to calculate aggregated metrics (FLOPS or memory bandwidth)"""
         return {f"{prefix}_{key}": np.max(metrics[f"{prefix}_{key}"]) for key in self.SMOCC_LEVELS}
+
+    def print_target_results(
+        self,
+        metrics: dict[str, list[float]],
+        flops: dict[str, float],
+        mem_bw: dict[str, float],
+        gpu: str,
+    ):
+        """Print target hardware results, convert runtime(ms) to second"""
+        print(f"\n{'=' * 60}")
+        print(f"Target Hardware: {gpu}")
+
+        print(f"Estimated TFLOPS [Lower SMOCC]: {flops.get('flops_lower'):.2f} GB/s")
+        print(f"Estimated TFLOPS [Mid SMOCC]: {flops.get('flops_mid'):.2f} GB/s")
+        print(f"Estimated TFLOPS [Upper SMOCC]: {flops.get('flops_upper'):.2f} GB/s")
+        print(f"Estimated TFLOPS [Mock SMOCC]: {flops.get('flops_mock'):.2f} GB/s")
+
+        print(f"Estimated Memory Bandwidth [Lower SMOCC]: {mem_bw.get('dram_lower'):.2f} GB/s")
+        print(f"Estimated Memory Bandwidth [Mid SMOCC]: {mem_bw.get('dram_mid'):.2f} GB/s")
+        print(f"Estimated Memory Bandwidth [Upper SMOCC]: {mem_bw.get('dram_upper'):.2f} GB/s")
+        print(f"Estimated Memory Bandwidth [Mock SMOCC]: {mem_bw.get('dram_mock'):.2f} GB/s")
+
+        print(
+            f"\nEstimated Kernel Time [Lower SMOCC]: {sum(metrics['t_kernel_lower']) / 1000:.2f} s"
+        )
+        print(f"Estimated Kernel Time [Mid SMOCC]:   {sum(metrics['t_kernel_mid']) / 1000:.2f} s")
+        print(f"Estimated Kernel Time [Upper SMOCC]: {sum(metrics['t_kernel_upper']) / 1000:.2f} s")
+        print(f"Estimated Kernel Time [Mock SMOCC]: {sum(metrics['t_kernel_mock']) / 1000:.2f} s")
+
+        print(f"\nEstimated PCIe Time: {sum(metrics['t_pcie']) / 1000:.2f} s")
+        print(f"\nEstimated Host Time: {sum(metrics['t_host']) / 1000:.2f} s")
+
+        print(
+            f"\nEstimated Total Runtime [Lower SMOCC]: {sum(metrics['t_total_lower']) / 1000:.2f} s"
+        )
+        print(f"Estimated Total Runtime [Mid SMOCC]:   {sum(metrics['t_total_mid']) / 1000:.2f} s")
+        print(
+            f"Estimated Total Runtime [Upper SMOCC]: {sum(metrics['t_total_upper']) / 1000:.2f} s"
+        )
+        print(f"Estimated Total Runtime [Mock SMOCC]: {sum(metrics['t_total_mock']) / 1000:.2f} s")
+        print(f"{'=' * 60}\n")
