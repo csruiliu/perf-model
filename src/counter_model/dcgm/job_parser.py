@@ -201,7 +201,7 @@ class JobParser:
         fp16_zeros = (filtered["FP16A"] < 0.01).sum()
 
         print(
-            f"Total Samples: {total_samples}, DRAMA Zero Samples: {drama_zeros}, "
+            f"Total Samples (GRACT > 0.9): {total_samples}, DRAMA Zero Samples: {drama_zeros}, "
             f"TENSO Zero Samples: {tensor_zeros}, FP64A Zero Samples: {fp64_zeros}, "
             f"FP32A Zero Samples: {fp32_zeros}, FP16A Zero Samples: {fp16_zeros}"
         )
