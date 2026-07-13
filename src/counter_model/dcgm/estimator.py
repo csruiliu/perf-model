@@ -1,8 +1,8 @@
 import argparse
 from abc import ABC, abstractmethod
 
-import numpy as np
 import pandas as pd
+from scipy.stats import trim_mean
 
 from counter_model.dcgm.gpu_metrics import MetricValues
 from counter_model.dcgm.gpu_time import TimeSlicer
@@ -122,7 +122,10 @@ class SingleGpuEstimator(BaseEstimator):
                 results[f"dram_{key}"].append(mem_bw_tgt)
 
                 flops_tgt = min(
-                    tf_ref * mv_gract_norm["tenso_gract"] * gpu_scaler.scale_smocc[key], tf_tgt
+                    self.ref_gpu.get_specs("tf64")
+                    * mv_gract_norm["tenso_gract"]
+                    * gpu_scaler.scale_smocc[key],
+                    self.tgt_gpu.get_specs("tf64"),
                 )
                 results[f"flops_{key}"].append(flops_tgt)
 
@@ -130,4 +133,7 @@ class SingleGpuEstimator(BaseEstimator):
 
     def _estimate_peak_rate(self, metrics: dict[str, list[float]], prefix: str) -> dict[str, float]:
         """Generic method to calculate aggregated metrics (FLOPS or memory bandwidth)"""
-        return {f"{prefix}_{key}": np.mean(metrics[f"{prefix}_{key}"]) for key in self.SMOCC_LEVELS}
+        return {
+            f"{prefix}_{key}": float(trim_mean(metrics[f"{prefix}_{key}"], 0.10))
+            for key in self.SMOCC_LEVELS
+        }
