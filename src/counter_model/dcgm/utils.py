@@ -1,7 +1,3 @@
-import matplotlib.pyplot as plt
-import numpy as np
-
-
 def print_reference_results(metrics: dict[str, list[float]], flops: float, mem_bw: float, gpu: str):
     """Print reference hardware results, convert runtime(ms) to second"""
     """No need to have total time"""
@@ -46,26 +42,3 @@ def print_target_results(
     print(f"Estimated Total Runtime [Upper SMOCC]: {sum(metrics['t_total_upper']) / 1000:.2f} s")
     print(f"Estimated Total Runtime [Mock SMOCC]: {sum(metrics['t_total_mock']) / 1000:.2f} s")
     print(f"{'=' * 60}\n")
-
-
-def plot_speedup_distribution(result_df, gpu_name, outpath, bins=40):
-    """Node-hours-weighted speedup PDF + cumulative % for one target GPU."""
-    fig, ax = plt.subplots()
-    ax2 = ax.twinx()
-
-    s = result_df["speedup"].to_numpy()
-    weights = result_df["node_hours"].to_numpy()
-
-    ax.hist(s, bins=bins, weights=weights, alpha=0.6, label=gpu_name)
-
-    # Cumulative percentage curve.
-    order = np.argsort(s)
-    cum = 100.0 * np.cumsum(weights[order]) / np.sum(weights)
-    ax2.plot(s[order], cum, linestyle="--", marker=".", label=f"{gpu_name} Cumulative %")
-
-    ax.set_xlabel(f"Speedup relative to A100 ({gpu_name})")
-    ax.set_ylabel("PDF (weighted by node-hours)")
-    ax2.set_ylabel("Cumulative Percentage (%)")
-    ax.legend(loc="center left")
-    fig.savefig(outpath, dpi=200, format="png", bbox_inches="tight")
-    plt.close(fig)
