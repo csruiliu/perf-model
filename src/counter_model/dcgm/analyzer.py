@@ -15,10 +15,10 @@ class SystemWideAnalyzer:
         # node_hours = job_runtime works for single-node jobs.
         self.job_node_hours: dict = getattr(args, "job_node_hours", {}) or {}
 
-    def run(self, job_to_df: dict[str, pd.DataFrame], smocc_level: str = "mid") -> pd.DataFrame:
+    def run(self, job_to_df: dict[str, pd.DataFrame], smocc_level: str = "mid"):
         """
         job_to_df:          {job_id: cleaned single-GPU DataFrame}
-        Returns a DataFrame indexed by job_id with columns:
+        Save a DataFrame indexed by job_id with columns:
             ref_runtime, <name>_runtime, <name>_speedup, node_hours
         """
         records = {}
@@ -48,5 +48,4 @@ class SystemWideAnalyzer:
 
         result_df = pd.DataFrame.from_dict(records, orient="index")
         result_df.index.name = "job_id"
-
-        return result_df
+        result_df.to_parquet("speedup_dist.parquet")
