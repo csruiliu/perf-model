@@ -54,6 +54,49 @@ def active_gpus(df, activity_col, activity_threshold, min_active_fraction):
     return active
 
 
+def verify_single_gpu(job_to_df, max_examples=10):
+    """Verify every job's DataFrame contains exactly one unique gpu_id.
+
+    Returns True if all jobs pass; otherwise prints offending jobs and returns False.
+    """
+    print("Verifying that each job contains exactly one GPU...")
+    bad_jobs = {}  # jobid -> list of unique gpu_ids found
+    empty_jobs = []  # jobs with zero rows
+
+    for jobid, df in job_to_df.items():
+        if "gpu_id" not in df.columns:
+            bad_jobs[jobid] = "no gpu_id column"
+            continue
+        if len(df) == 0:
+            empty_jobs.append(jobid)
+            continue
+        unique_gpus = df["gpu_id"].unique()
+        if len(unique_gpus) != 1:
+            bad_jobs[jobid] = list(unique_gpus)
+
+    n_ok = len(job_to_df) - len(bad_jobs) - len(empty_jobs)
+    print(f"  Jobs passing (exactly one GPU): {n_ok}/{len(job_to_df)}")
+
+    if empty_jobs:
+        print(f"  WARNING: {len(empty_jobs)} job(s) have zero rows.")
+        for jobid in empty_jobs[:max_examples]:
+            print(f"    - {jobid}: empty DataFrame")
+        if len(empty_jobs) > max_examples:
+            print(f"    ... and {len(empty_jobs) - max_examples} more.")
+
+    if bad_jobs:
+        print(f"  ERROR: {len(bad_jobs)} job(s) do NOT contain exactly one GPU:")
+        for jobid, gpus in list(bad_jobs.items())[:max_examples]:
+            print(f"    - {jobid}: {gpus}")
+        if len(bad_jobs) > max_examples:
+            print(f"    ... and {len(bad_jobs) - max_examples} more.")
+        print("  Verification FAILED.\n")
+        return False
+
+    print("  Verification PASSED: every job contains exactly one GPU.\n")
+    return True
+
+
 def main():
     args = parse_args()
 
@@ -96,6 +139,13 @@ def main():
     if total_jobs:
         print(f"Fraction:          {n_single / total_jobs:.2%}")
     print("=" * 50 + "\n")
+
+    # Verify the filtered result before writing anything.
+    ok = verify_single_gpu(single_gpu)
+    if not ok:
+        raise RuntimeError(
+            "Verification failed: some jobs contain more than one GPU. Output was NOT written."
+        )
 
     # Free the original before writing, to reduce peak memory.
     del job_to_df
