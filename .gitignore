@@ -4,6 +4,7 @@
 **/*.out
 **/*.csv
 **/*.zip
+**/*.pkl
 **/results
 **/figures
 **/pm_data
