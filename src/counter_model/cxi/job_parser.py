@@ -12,7 +12,7 @@ import pandas as pd
 
 from counter_model.cxi.constants import (
     ALL_CNTRS,
-    MISC_CNTRS,
+    LPE_CNTRS,
     NUM_ALL_CNTRS,
     RX_HIST_SLICE,
     TX_HIST_SLICE,
@@ -141,7 +141,7 @@ def load_counters_single_node(counter_file: Path) -> np.ndarray:
         raise ValueError(f"{counter_file}: negative counter values detected.")
 
     # --- total message count ---
-    missing_msg = [name for name in MISC_CNTRS if name not in counter_lookup]
+    missing_msg = [name for name in LPE_CNTRS if name not in counter_lookup]
     if missing_msg:
         raise KeyError(
             f"{counter_file}: missing message-total counters:\n"
