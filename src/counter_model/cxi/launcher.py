@@ -7,9 +7,9 @@ Full pipeline for the network time model.
 import argparse
 from pathlib import Path
 
-from counter_model.cxi.build_matrix import build_matrix_a, validate_matrix_a
 from counter_model.cxi.constants import MSG_SIZE_SETS
-from counter_model.cxi.load_counters import load_counters_single_job
+from counter_model.cxi.job_parser import load_counters_single_job
+from counter_model.cxi.matrix_builder import build_matrix_a, validate_matrix_a
 from counter_model.cxi.solver import print_solution_summary, solve_global, validate_solution
 from counter_model.cxi.time_estimator import (
     build_latency_model_from_config,

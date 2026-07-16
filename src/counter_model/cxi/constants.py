@@ -51,7 +51,7 @@ RX_HIST_CNTRS: list[str] = [
 
 RX_TC_CNTRS: list[str] = ["hni_pkts_recv_by_tc_0", "hni_pkts_recv_by_tc_1"]
 
-MISC_CNTRS = ["lpe_net_match_priority_0", "lpe_net_match_overflow_0"]
+LPE_CNTRS = ["lpe_net_match_priority_0", "lpe_net_match_overflow_0"]
 
 # Validate symmetry before deriving anything
 assert len(TX_HIST_CNTRS) == len(RX_HIST_CNTRS), "TX and RX histogram counter lists must have the same length"
