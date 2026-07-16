@@ -37,8 +37,8 @@ export IPM_REPORT=terse
 
 # LAMMPS Path
 export LAMMPS_DIR="/pscratch/sd/r/ruiliu/lammps-pm-a100-fp32"
-export LAMMPS_COMM="/global/homes/r/ruiliu/perf-model-dcgm/lammps/common"
-export LAMMPS_PM="/global/homes/r/ruiliu/perf-model-dcgm/lammps/pm"
+export LAMMPS_COMM="/global/homes/r/ruiliu/perf-model/eval/cxi/lammps/common"
+export LAMMPS_PM="/global/homes/r/ruiliu/perf-model/eval/cxi/lammps/pm"
 
 # Results directory for this job
 export RESULTS_DIR="${LAMMPS_PM}/results/LPS_SMALL_FP32_CTR_${SLURM_JOB_ID}"
@@ -77,7 +77,9 @@ hni_rx_ok_1024_to_2047 \
 hni_rx_ok_2048_to_4095 \
 hni_rx_ok_4096_to_8191 \
 hni_pkts_recv_by_tc_0 \
-hni_pkts_recv_by_tc_1"
+hni_pkts_recv_by_tc_1 \
+lpe_net_match_overflow_0 \
+lpe_net_match_priority_0"
 
 # sample interval
 export SAMPLE_INTERVAL=1
@@ -97,7 +99,7 @@ cd    ${RESULTS_DIR}
 ln -s ${LAMMPS_COMM} .
 ln -s ${LAMMPS_PM}/wrap_dcgmi_container.sh .
 ln -s ${LAMMPS_PM}/cxi_snapshot.sh .
-ln -s ${LAMMPS_PM}/cxi_monitor.sh .
+#ln -s ${LAMMPS_PM}/cxi_monitor.sh .
 
 # Pre-create per-node directories so cxi_snapshot.sh can write immediately
 echo "Creating per-node directory structure under ${RESULTS_DIR}..."
@@ -153,4 +155,4 @@ printf "Elapsed Time: %.2f seconds\n" $elapsed >> ${RESULTS_DIR}/runtime.out
 unlink common
 unlink wrap_dcgmi_container.sh
 unlink cxi_snapshot.sh
-unlink cxi_monitor.sh
+#unlink cxi_monitor.sh
