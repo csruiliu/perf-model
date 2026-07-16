@@ -3,20 +3,18 @@
 # =============================================================
 # cxi_snapshot.sh
 #
-# TX/RX counter names are defined in my_run_p2p_host.sh and
-# passed via TX_COUNTERS_STR and RX_COUNTERS_STR exports.
-# Do not define counter names here.
+# Usage: ./cxi_snapshot.sh <prefix>
 #
-# Usage: ./cxi_snapshot.sh <prefix> <duration>
-# Requires: RESULTS_DIR, TX_COUNTERS_STR, RX_COUNTERS_STR
+# Supports multiple CXI NICs. For each NIC discovered under
+# /sys/class/cxi/cxiN/, snapshots are written to a per-NIC
+# subdirectory: ${RESULTS_DIR}/${NODE}/cxiN/
 # =============================================================
 
 PREFIX=$1
-DURATION=${2:-5}
 
 # Validate arguments
 if [ -z "$PREFIX" ]; then
-    echo "Usage: $0 <prefix> [duration_seconds]"
+    echo "Usage: $0 <prefix>"
     exit 1
 fi
 
@@ -25,6 +23,7 @@ if [ "$PREFIX" != "before" ] && [ "$PREFIX" != "after" ]; then
     exit 1
 fi
 
+# Check required environment variables
 if [ -z "${RESULTS_DIR}" ] || [ ! -d "${RESULTS_DIR}" ]; then
     echo "Error: RESULTS_DIR is not set or does not exist: ${RESULTS_DIR}"
     exit 1
@@ -40,52 +39,63 @@ fi
 read -ra TX_COUNTERS <<< "${TX_COUNTERS_STR}"
 read -ra RX_COUNTERS <<< "${RX_COUNTERS_STR}"
 
-# Node name — Level 2 directory
 NODE=${SLURMD_NODENAME:-$(hostname -s)}
 NODE_DIR="${RESULTS_DIR}/${NODE}"
 
-# One NIC per node
-TELEM_PATH="/sys/class/cxi/cxi0/device/telemetry"
+# =============================================================
+# Discover all CXI NICs that have a telemetry directory.
+# Populates the global CXI_DEVICES array, sorted for
+# consistent ordering across runs.
+# =============================================================
+discover_cxi_devices() {
+    local -a devices=()
+    local nic_path nic_name
 
+    for nic_path in /sys/class/cxi/cxi*/; do
+        [ -d "${nic_path}" ] || continue
+        nic_name=$(basename "${nic_path}")
+        if [ -d "${nic_path}/device/telemetry" ]; then
+            devices+=("${nic_name}")
+        fi
+    done
+
+    mapfile -t CXI_DEVICES < <(printf '%s\n' "${devices[@]}" | sort)
+}
 
 # =============================================================
-# Helper: take a single point-in-time snapshot
-# Writes CSV: counter_name,direction,value
-# Direction is known explicitly — TX list and RX list separate
+# Take a point-in-time snapshot for one NIC.
+# Args:
+#   $1  output_file  path to write CSV to
+#   $2  telem_path   /sys/class/cxi/cxiN/device/telemetry
+# Output CSV: counter_name,direction,value
 # =============================================================
 write_snapshot() {
     local output_file=$1
+    local telem_path=$2
+    local counter telem_file value direction
 
-    echo "counter_name,direction,value" > "${output_file}"
-
-    # TX counters
-    for counter in "${TX_COUNTERS[@]}"; do
-        local telem_file="${TELEM_PATH}/${counter}"
-        local value=0
-        if [ -f "${telem_file}" ]; then
-            value=$(cat "${telem_file}" 2>/dev/null || echo 0)
-        else
-            echo "  [WARN] Counter not found: ${telem_file}"
-        fi
-        echo "${counter},TX,${value}"
-    done >> "${output_file}"
-
-    # RX counters
-    for counter in "${RX_COUNTERS[@]}"; do
-        local telem_file="${TELEM_PATH}/${counter}"
-        local value=0
-        if [ -f "${telem_file}" ]; then
-            value=$(cat "${telem_file}" 2>/dev/null || echo 0)
-        else
-            echo "  [WARN] Counter not found: ${telem_file}"
-        fi
-        echo "${counter},RX,${value}"
-    done >> "${output_file}"
+    {
+        echo "counter_name,direction,value"
+        for direction in TX RX; do
+            local -n counters="${direction}_COUNTERS"
+            for counter in "${counters[@]}"; do
+                telem_file="${telem_path}/${counter}"
+                value=0
+                if [[ -f "${telem_file}" ]]; then
+                    IFS='@' read -r value _ < "${telem_file}" || value=0
+                else
+                    echo "  [WARN] Counter not found: ${telem_file}" >&2
+                fi
+                echo "${counter},${direction},${value}"
+            done
+        done
+    } > "${output_file}"
 }
 
-
 # =============================================================
-# Helper: compute delta (after - before) → counters.csv
+# Compute delta (after - before) and write to delta_file.
+# Negative deltas (counter wrap / reset) are clamped to 0.
+# Output CSV: counter_name,direction,delta_value
 # =============================================================
 compute_delta() {
     local before_file=$1
@@ -93,77 +103,94 @@ compute_delta() {
     local delta_file=$3
 
     awk -F',' '
+        BEGIN { OFS = "," }
         NR == FNR {
-            if (FNR == 1) next
-            before[$1] = $3
+            if (FNR > 1) before[$1,$2] = $3 + 0
             next
         }
-        FNR == 1 {
-            print
-            next
-        }
+        FNR == 1 { print; next }
         {
-            counter   = $1
-            direction = $2
-            after_val  = $3 + 0
-            before_val = (counter in before) ? before[counter] + 0 : 0
-            delta = after_val - before_val
-            if (delta < 0) delta = 0
-            print counter "," direction "," delta
+            delta = ($3 + 0) - before[$1,$2]
+            print $1, $2, (delta > 0 ? delta : 0)
         }
     ' "${before_file}" "${after_file}" > "${delta_file}"
 }
 
-
 # =============================================================
 # Main
 # =============================================================
+discover_cxi_devices
+
+if [ ${#CXI_DEVICES[@]} -eq 0 ]; then
+    echo "Error: No CXI NICs with a telemetry directory found under /sys/class/cxi/"
+    exit 1
+fi
+
 echo "=============================================="
 echo "cxi_snapshot.sh"
 echo "  Node       : ${NODE}"
 echo "  Prefix     : ${PREFIX}"
-echo "  Duration   : ${DURATION}s"
 echo "  RESULTS_DIR: ${RESULTS_DIR}"
 echo "  TX counters: ${#TX_COUNTERS[@]}"
 echo "  RX counters: ${#RX_COUNTERS[@]}"
+echo "  NICs found : ${CXI_DEVICES[*]}"
 echo "=============================================="
-
-if [ ! -d "${TELEM_PATH}" ]; then
-    echo "Error: Telemetry path not found on ${NODE}: ${TELEM_PATH}"
-    exit 1
-fi
 
 mkdir -p "${NODE_DIR}"
 
-echo "Waiting ${DURATION} seconds for stability on ${NODE}..."
-sleep "${DURATION}"
+# ------------------------------------------------------------------
+if [ "${PREFIX}" == "before" ]; then
+# ------------------------------------------------------------------
+    echo "Taking '${PREFIX}' snapshot on ${NODE}..."
 
-OUTPUT_FILE="${NODE_DIR}/${PREFIX}_counters.csv"
-echo "Taking '${PREFIX}' snapshot on ${NODE}..."
-write_snapshot "${OUTPUT_FILE}"
+    for nic in "${CXI_DEVICES[@]}"; do
+        telem_path="/sys/class/cxi/${nic}/device/telemetry"
+        nic_dir="${NODE_DIR}/${nic}"
+        mkdir -p "${nic_dir}"
 
-N_COUNTERS=$(( $(wc -l < "${OUTPUT_FILE}") - 1 ))
-echo "  [OK] ${NODE}/${PREFIX}_counters.csv (${N_COUNTERS} counters)"
+        output_file="${nic_dir}/${PREFIX}_counters.csv"
+        write_snapshot "${output_file}" "${telem_path}"
 
-if [ "${PREFIX}" == "after" ]; then
+        N_COUNTERS=$(( $(wc -l < "${output_file}") - 1 ))
+        echo "  [OK] ${NODE}/${nic}/${PREFIX}_counters.csv (${N_COUNTERS} counters)"
+    done
 
-    BEFORE_FILE="${NODE_DIR}/before_counters.csv"
-    DELTA_FILE="${NODE_DIR}/counters.csv"
-
-    if [ ! -f "${BEFORE_FILE}" ]; then
-        echo "  [WARN] before_counters.csv missing on ${NODE}"
-        echo "  [WARN] Copying after snapshot as counters.csv"
-        cp "${OUTPUT_FILE}" "${DELTA_FILE}"
-    else
-        compute_delta "${BEFORE_FILE}" "${OUTPUT_FILE}" "${DELTA_FILE}"
-        echo "  [OK] ${NODE}/counters.csv (delta = after - before)"
-    fi
-
+# ------------------------------------------------------------------
+else  # PREFIX == "after"
+# ------------------------------------------------------------------
+    echo "Taking '${PREFIX}' snapshot on ${NODE}..."
     echo ""
+
+    for nic in "${CXI_DEVICES[@]}"; do
+        telem_path="/sys/class/cxi/${nic}/device/telemetry"
+        nic_dir="${NODE_DIR}/${nic}"
+        mkdir -p "${nic_dir}"
+
+        output_file="${nic_dir}/${PREFIX}_counters.csv"
+        write_snapshot "${output_file}" "${telem_path}"
+
+        N_COUNTERS=$(( $(wc -l < "${output_file}") - 1 ))
+        echo "  [OK] ${NODE}/${nic}/${PREFIX}_counters.csv (${N_COUNTERS} counters)"
+
+        before_file="${nic_dir}/before_counters.csv"
+        delta_file="${nic_dir}/counters.csv"
+
+        if [ ! -f "${before_file}" ]; then
+            echo "  [WARN] before_counters.csv missing for ${nic} on ${NODE}"
+            echo "  [WARN] Copying after snapshot as counters.csv"
+            cp "${output_file}" "${delta_file}"
+        else
+            compute_delta "${before_file}" "${output_file}" "${delta_file}"
+            echo "  [OK] ${NODE}/${nic}/counters.csv (delta = after - before)"
+        fi
+        echo ""
+    done
+
     echo "Files written to ${NODE_DIR}:"
     find "${NODE_DIR}" -name "*.csv" | sort | \
         sed 's|'"${RESULTS_DIR}"'/||' | \
         awk '{print "  " $0}'
 fi
 
+echo ""
 echo "Snapshot '${PREFIX}' complete on ${NODE}"

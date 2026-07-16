@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -J OMB_p2p_host
-#SBATCH -o /pscratch/sd/r/ruiliu/osu-micro-benchmarks-ipm/results/OMB_%j/OMB_p2p_host-%j.out 
+#SBATCH -o ../results/OMB_%j/OMB_p2p_host-%j.out 
 #SBATCH -N 2
 #SBATCH -C cpu
 #SBATCH -q sow
@@ -16,14 +16,8 @@
 #The nodes identified above are maximally distant
 #on Perlmutter's Slingshot network.
 
-#The number of NICs(j) and CPU cores (k) per node
-#should be specified here.
-j=1   #NICs per node
-k=128 #Cores per node
-
 # IPM Setting
-export IPM_HOME=/pscratch/sd/r/ruiliu/IPM/install
-export IPM_LOGDIR=/pscratch/sd/r/ruiliu/ipm-logs
+export IPM_LOGDIR=/pscratch/sd/r/ruiliu/ipm-logs/omb
 export IPM_LOG=full
 export IPM_REPORT=full
 
@@ -82,41 +76,20 @@ lpe_net_match_priority_0"
 BEFORE_DURATION=10
 AFTER_DURATION=10
 
-# Parameters for RDZV threshold
-#export MPICH_GNI_MAX_EAGER_MSG_SIZE=10485760
-#export FI_CXI_RDZV_THRESHOLD=10485760
-
 # Parameters for OMB 
-MESSAGE_SIZE=2048
-ITER=100000
+MESSAGE_SIZE=64
+ITER=1000000
 WARMUP_ITER=0
 WINDOW_SIZE=1
-export SAMPLE_INTERVAL=10
 
 # Collect baseline counters BEFORE benchmarks
-echo "Collecting baseline telemetry for ${BEFORE_DURATION} seconds..."
-srun -N 2 --ntasks-per-node=1 ./cxi_snapshot.sh before ${BEFORE_DURATION}
+echo "Collecting baseline telemetry..."
+srun -N 2 --ntasks-per-node=1 ./cxi_snapshot.sh before
 
 echo "=== Node Assignment for osu_bw ===" > $RESULTS_DIR/runtime.out
 
-start=$(date +%s.%N)
-
-srun -N 2 -n 2 ./cxi_monitor.sh ${OMB_PT2PT}/osu_bw -m $MESSAGE_SIZE:$MESSAGE_SIZE -i $ITER -x $WARMUP_ITER -W $WINDOW_SIZE H H
-
-end=$(date +%s.%N)
-
-echo "======================================" >> $RESULTS_DIR/runtime.out
+srun -N 2 -n 2 ${OMB_PT2PT}/osu_latency -m $MESSAGE_SIZE:$MESSAGE_SIZE -i $ITER -x $WARMUP_ITER H H
 
 # Collect final counters AFTER benchmarks
-echo "Collecting final telemetry for ${AFTER_DURATION} seconds..."
-srun -N 2 --ntasks-per-node=1 ./cxi_snapshot.sh after ${AFTER_DURATION}
-
-elapsed=$(printf "%s - %s\n" $end $start | bc -l)
-
-# Create runtime.out with node assignment info
-
-echo "" >> $RESULTS_DIR/runtime.out
-echo "MESSAGE_SIZE: ${MESSAGE_SIZE} Byte(s)" >> $RESULTS_DIR/runtime.out
-echo "ITERATIONS: $ITER" >> $RESULTS_DIR/runtime.out
-echo "SAMPLE_INTERVAL: $SAMPLE_INTERVAL" >> $RESULTS_DIR/runtime.out
-printf "Elapsed Time: %.2f seconds\n" $elapsed >> $RESULTS_DIR/runtime.out
+echo "Collecting final telemetry ..."
+srun -N 2 --ntasks-per-node=1 ./cxi_snapshot.sh after
