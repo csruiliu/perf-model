@@ -29,11 +29,11 @@ export IPM_REPORT=full
 
 #The paths to OMB and its point-to-point benchmarks
 #should be specified here
-OMB_DIR=../libexec/osu-micro-benchmarks
+OMB_DIR=/pscratch/sd/r/ruiliu/osu-micro-benchmarks-7.1-1/libexec/osu-micro-benchmarks
 OMB_PT2PT=${OMB_DIR}/mpi/pt2pt
 OMB_1SIDE=${OMB_DIR}/mpi/one-sided
 
-export RESULTS_DIR=/pscratch/sd/r/ruiliu/osu-micro-benchmarks-ipm/results/OMB_${SLURM_JOB_ID}
+export RESULTS_DIR=../results/OMB_${SLURM_JOB_ID}
 mkdir -p $RESULTS_DIR
 
 # Pre-create Level 2 node directories on the shared filesystem
