@@ -105,7 +105,7 @@ class SingleGpuEstimator(BaseEstimator):
             # Other node time
             t_host_tgt = time_frac_ref.t_host / host_scaler.host_scale(cores_alloc)
             results["t_host"].append(t_host_tgt)
-
+            print(gpu_scaler.scale_kernel)
             # Process each SMOCC key
             for key in self.SMOCC_LEVELS:
                 # Calculate kernel and total time
@@ -115,7 +115,7 @@ class SingleGpuEstimator(BaseEstimator):
                 mem_bw_tgt = min(
                     self.ref_gpu.get_specs("mem_bw")
                     * mv_gract_norm["drama_gract"]
-                    * gpu_scaler.scale_smocc[key],
+                    * gpu_scaler.scale_kernel[key],
                     self.tgt_gpu.get_specs("mem_bw"),
                 )
                 results[f"dram_{key}"].append(mem_bw_tgt)
@@ -129,7 +129,7 @@ class SingleGpuEstimator(BaseEstimator):
 
     def _estimate_peak_rate(self, metrics: dict[str, list[float]], prefix: str) -> dict[str, float]:
         """Generic method to calculate aggregated metrics (FLOPS or memory bandwidth)"""
-        return {f"{prefix}_{key}": np.max(metrics[f"{prefix}_{key}"]) for key in self.SMOCC_LEVELS}
+        return {f"{prefix}_{key}": np.mean(metrics[f"{prefix}_{key}"]) for key in self.SMOCC_LEVELS}
 
     def print_target_results(
         self,
