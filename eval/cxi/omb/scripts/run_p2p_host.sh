@@ -73,7 +73,9 @@ hni_rx_ok_1024_to_2047 \
 hni_rx_ok_2048_to_4095 \
 hni_rx_ok_4096_to_8191 \
 hni_pkts_recv_by_tc_0 \
-hni_pkts_recv_by_tc_1"
+hni_pkts_recv_by_tc_1 \
+lpe_net_match_overflow_0 \
+lpe_net_match_priority_0"
 
 
 # Time windows for before/after collection (in seconds)
@@ -89,7 +91,7 @@ MESSAGE_SIZE=2048
 ITER=100000
 WARMUP_ITER=0
 WINDOW_SIZE=1
-export SAMPLE_INTERVAL=1
+export SAMPLE_INTERVAL=10
 
 # Collect baseline counters BEFORE benchmarks
 echo "Collecting baseline telemetry for ${BEFORE_DURATION} seconds..."
