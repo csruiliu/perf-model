@@ -17,7 +17,8 @@
 #on Perlmutter's Slingshot network.
 
 # IPM Setting
-export IPM_LOGDIR=/pscratch/sd/r/ruiliu/ipm-logs/omb
+export IPM_HOME=/pscratch/sd/r/ruiliu/IPM/install
+export LD_PRELOAD=${IPM_HOME}/lib/libipm.so
 export IPM_LOG=full
 export IPM_REPORT=full
 
@@ -28,7 +29,10 @@ OMB_PT2PT=${OMB_DIR}/mpi/pt2pt
 OMB_1SIDE=${OMB_DIR}/mpi/one-sided
 
 export RESULTS_DIR=../results/OMB_${SLURM_JOB_ID}
-mkdir -p $RESULTS_DIR
+mkdir -p ${RESULTS_DIR}
+
+export IPM_LOGDIR=${RESULTS_DIR}/ipm-logs
+mkdir -p ${IPM_LOGDIR}
 
 # Pre-create Level 2 node directories on the shared filesystem
 # so cxi_snapshot.sh can write to them immediately
