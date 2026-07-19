@@ -96,7 +96,7 @@ for (ref_name, target), v in reciprocal_points.items():
 # ---------------------------------------------------------------------------
 # Plot
 # ---------------------------------------------------------------------------
-fig, ax = plt.subplots(figsize=(6.5, 6.0))
+fig, ax = plt.subplots(figsize=(5.8, 5.3))
 
 # --- reciprocal (swapped ref/target) connecting lines ---
 points = {k: (v["meas"], v["smocc_mid"]) for k, v in reciprocal_points.items()}
@@ -275,7 +275,7 @@ leg2 = ax.legend(
     handles=shape_handles,
     title="Target GPU",
     loc="upper left",
-    bbox_to_anchor=(0.0, 0.84),
+    bbox_to_anchor=(0.0, 0.83),
     fontsize=10,
     title_fontsize=11,
     framealpha=0.9,
@@ -298,7 +298,7 @@ leg4 = ax.legend(
     handles=guide_handles,
     title="Guide lines",
     loc="lower right",
-    bbox_to_anchor=(1.0, 0.2),
+    bbox_to_anchor=(1.0, 0.215),
     fontsize=10,
     title_fontsize=11,
     framealpha=0.9,
