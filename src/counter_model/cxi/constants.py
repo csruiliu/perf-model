@@ -128,7 +128,7 @@ MSG_SIZES_COARSE: np.ndarray = np.array([
 
 # dict of msg size sets
 MSG_SIZE_SETS: dict = {
-    "permultter" : MSG_SIZES_PM,
+    "pm" : MSG_SIZES_PM,
     "fine" : MSG_SIZES_FINE,
     "coarse" : MSG_SIZES_COARSE,
 }
