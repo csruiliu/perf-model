@@ -13,7 +13,7 @@
 #SBATCH --perf=generic
 #SBATCH --exclusive
 #SBATCH -t 00:30:00
-#SBATCH -o /global/homes/r/ruiliu/perf-model-dcgm/lammps/pm/results/LPS_SMALL_FP32_CTR_%j/%j.out
+#SBATCH -o /global/homes/r/ruiliu/perf-model/eval/cxi/lammps/pm/results/LPS_SMALL_FP32_CTR_%j/%j.out
 
 # Load necessary modules for GPU and CUDA support
 module load PrgEnv-gnu
@@ -30,10 +30,9 @@ module load craype-accel-nvidia80
 
 # IPM Path and Settings
 export IPM_HOME=/pscratch/sd/r/ruiliu/IPM/install
-export IPM_LOGDIR=/pscratch/sd/r/ruiliu/ipm-logs/lammps
 export LD_PRELOAD=${IPM_HOME}/lib/libipm.so
 export IPM_LOG=full
-export IPM_REPORT=terse
+export IPM_REPORT=full
 
 # LAMMPS Path
 export LAMMPS_DIR="/pscratch/sd/r/ruiliu/lammps-pm-a100-fp32"
@@ -42,6 +41,8 @@ export LAMMPS_PM="/global/homes/r/ruiliu/perf-model/eval/cxi/lammps/pm"
 
 # Results directory for this job
 export RESULTS_DIR="${LAMMPS_PM}/results/LPS_SMALL_FP32_CTR_${SLURM_JOB_ID}"
+
+export IPM_LOGDIR=${RESULTS_DIR}/ipm-logs
 
 # OMP Settings for LAMMPS
 export OMP_NUM_THREADS=16
