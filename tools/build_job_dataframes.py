@@ -2,12 +2,7 @@
 """
 Generate three pickle files, each containing a dict:  job_to_df[jobid] -> dcgm_df
 
-    all jobs
-    jobs that used more than one node
-    jobs that used exactly one node
-
-The DCGM DataFrame for each job is read from its `.pq` file.
-Node count is derived from the `nodelist` field in the JSON metadata.
+Processes one category per pass to keep peak memory low.
 """
 
 import argparse
@@ -27,99 +22,90 @@ def parse_args():
         "--input-dir",
         type=Path,
         required=True,
-        help="Root folder containing the daily subfolders (e.g. jobwise_dcgm_march_2026_gpu).",
+        help="Root folder containing the daily subfolders.",
     )
     parser.add_argument(
         "-o",
         "--output-dir",
         type=Path,
         default=Path("."),
-        help="Directory to write the pickle files (default: current directory).",
+        help="Directory to write the pickle files.",
     )
+    parser.add_argument("--all-name", default="all_jobs.pkl")
+    parser.add_argument("--multi-name", default="multi_node_jobs.pkl")
+    parser.add_argument("--single-name", default="single_node_jobs.pkl")
     parser.add_argument(
-        "--all-name",
-        default="all_jobs.pkl",
-        help="Filename for the all-jobs pickle (default: all_jobs.pkl).",
-    )
-    parser.add_argument(
-        "--multi-name",
-        default="multi_node_jobs.pkl",
-        help="Filename for the multi-node pickle (default: multi_node_jobs.pkl).",
-    )
-    parser.add_argument(
-        "--single-name",
-        default="single_node_jobs.pkl",
-        help="Filename for the single-node pickle (default: single_node_jobs.pkl).",
+        "--category",
+        choices=["all", "multi", "single"],
+        default=None,
+        help="If set, only build this one category (recommended on memory-limited nodes).",
     )
     return parser.parse_args()
 
 
 def get_node_count(meta: dict) -> int:
-    """Return the number of unique nodes used by a job."""
     nodes = set()
     for entry in meta.get("entries", []):
         nodes.update(entry.get("nodelist", []))
     return len(nodes)
 
 
-def main():
-    args = parse_args()
-    root = args.input_dir
-
-    if not root.is_dir():
-        raise SystemExit(f"[ERROR] Input directory not found: {root}")
-
-    job_to_df_all = {}
-    job_to_df_multi = {}
-    job_to_df_single = {}
-
+def iter_jobs(root: Path):
+    """Yield (jobid, json_path, pq_path, n_nodes) for every valid job."""
     for subfolder in sorted(root.iterdir()):
         if not subfolder.is_dir():
             continue
-
         for json_path in sorted(subfolder.glob("*.json")):
-            stem = json_path.stem  # <job_id>_<user_id>
+            stem = json_path.stem
             jobid = stem.split("_")[0]
             pq_path = subfolder / f"{stem}.pq"
-
             if not pq_path.exists():
                 print(f"[WARN] Missing .pq for {stem}, skipping.")
                 continue
-
             try:
                 with open(json_path) as f:
                     meta = json.load(f)
             except (json.JSONDecodeError, OSError) as e:
                 print(f"[WARN] Could not read {json_path}: {e}")
                 continue
+            yield jobid, pq_path, get_node_count(meta)
 
-            n_nodes = get_node_count(meta)
 
-            try:
-                dcgm_df = pd.read_parquet(pq_path)
-            except Exception as e:
-                print(f"[WARN] Could not read {pq_path}: {e}")
-                continue
+def build_category(root: Path, category: str) -> dict:
+    """Build the job_to_df dict for one category."""
+    job_to_df = {}
+    for jobid, pq_path, n_nodes in iter_jobs(root):
+        if category == "multi" and n_nodes <= 1:
+            continue
+        if category == "single" and n_nodes != 1:
+            continue
+        try:
+            job_to_df[jobid] = pd.read_parquet(pq_path)
+        except Exception as e:
+            print(f"[WARN] Could not read {pq_path}: {e}")
+    return job_to_df
 
-            job_to_df_all[jobid] = dcgm_df
-            if n_nodes > 1:
-                job_to_df_multi[jobid] = dcgm_df
-            elif n_nodes == 1:
-                job_to_df_single[jobid] = dcgm_df
 
-    # --- Save ---
+def main():
+    args = parse_args()
+    root = args.input_dir
+    if not root.is_dir():
+        raise SystemExit(f"[ERROR] Input directory not found: {root}")
+
     out_dir = args.output_dir
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    for name, d in [
-        (args.all_name, job_to_df_all),
-        (args.multi_name, job_to_df_multi),
-        (args.single_name, job_to_df_single),
-    ]:
-        path = out_dir / name
+    name_map = {"all": args.all_name, "multi": args.multi_name, "single": args.single_name}
+
+    categories = [args.category] if args.category else ["all", "multi", "single"]
+
+    for cat in categories:
+        d = build_category(root, cat)
+        path = out_dir / name_map[cat]
         with open(path, "wb") as f:
-            pickle.dump(d, f)
+            pickle.dump(d, f, protocol=pickle.HIGHEST_PROTOCOL)
         print(f"Saved {len(d):>6} jobs to {path}")
+        del d  # free memory before the next pass
 
 
 if __name__ == "__main__":

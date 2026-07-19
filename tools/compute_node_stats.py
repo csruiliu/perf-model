@@ -1,108 +1,97 @@
-#!/usr/bin/env python3
 """
-Compute statistics on the number of jobs by node count.
+job_nodecount_hist.py
 
-For each job, the node count is derived from the `nodelist` field in the
-job's JSON metadata (unique nodes across all entries).
+Distribution of jobs by distinct node count.
+
+A "job" is the (jobid, userid) pair read from inside each JSON, merged
+across all date folders. A job's node count is the number of DISTINCT
+nodes it touched (union of every entry's 'nodelist').
+
+Output CSV columns:
+    num_nodes,num_jobs,pct_of_jobs
+one row per node-count value that occurs, sorted ascending.
+pct_of_jobs is rounded to 2 decimals.
 """
 
 import argparse
+import csv
 import json
 from collections import Counter, defaultdict
 from pathlib import Path
 
-import pandas as pd
-
 
 def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Compute statistics on the number of jobs by node count."
-    )
-    parser.add_argument(
+    p = argparse.ArgumentParser(description="Distribution of jobs by distinct node count.")
+    p.add_argument(
         "-i",
         "--input-dir",
         type=Path,
         required=True,
-        help="Root folder containing the daily subfolders (e.g. jobwise_dcgm_march_2026_gpu).",
+        help="Root folder containing the daily subfolders.",
     )
-    parser.add_argument(
+    p.add_argument(
         "-o",
         "--output-csv",
         type=Path,
-        default=Path("node_stats.csv"),
-        help="Path to write the summary CSV (default: node_stats.csv).",
+        default=Path("job_nodecount_hist.csv"),
+        help="Output CSV (default: job_nodecount_hist.csv).",
     )
-    return parser.parse_args()
-
-
-def get_node_count(json_path: Path) -> int:
-    """Return the number of unique nodes used by a job."""
-    with open(json_path) as f:
-        meta = json.load(f)
-
-    nodes = set()
-    for entry in meta.get("entries", []):
-        nodes.update(entry.get("nodelist", []))
-    return len(nodes)
+    return p.parse_args()
 
 
 def main():
     args = parse_args()
     root = args.input_dir
-
     if not root.is_dir():
         raise SystemExit(f"[ERROR] Input directory not found: {root}")
 
-    # Map: node_count -> number of jobs
-    nodecount_to_jobs = Counter()
-    nodecount_to_jobids = defaultdict(list)
-    total_jobs = 0
+    # (jobid, userid) -> set of distinct nodes (union across entries/folders)
+    job_nodes = defaultdict(set)
 
     for subfolder in sorted(root.iterdir()):
         if not subfolder.is_dir():
             continue
-
         for json_path in sorted(subfolder.glob("*.json")):
-            # Filename format: <job_id>_<user_id>.json
-            jobid = json_path.stem.split("_")[0]
-
             try:
-                n_nodes = get_node_count(json_path)
+                with open(json_path) as f:
+                    meta = json.load(f)
             except (json.JSONDecodeError, OSError) as e:
-                print(f"[WARN] Skipping {json_path}: {e}")
+                print(f"[WARN] Could not read {json_path}: {e}")
                 continue
 
-            nodecount_to_jobs[n_nodes] += 1
-            nodecount_to_jobids[n_nodes].append(jobid)
-            total_jobs += 1
+            jobid = meta.get("jobid")
+            userid = meta.get("userid")
+            if jobid is None or userid is None:
+                print(f"[WARN] Missing jobid/userid in {json_path}")
+                continue
 
-    # --- Build a summary DataFrame ---
-    rows = []
-    for n_nodes in sorted(nodecount_to_jobs):
-        count = nodecount_to_jobs[n_nodes]
-        rows.append(
-            {
-                "num_nodes": n_nodes,
-                "num_jobs": count,
-                "pct_of_jobs": round(100 * count / total_jobs, 2) if total_jobs else 0,
-            }
-        )
+            key = (str(jobid), str(userid))
+            for e in meta.get("entries", []):
+                nodelist = e.get("nodelist") or []
+                if not isinstance(nodelist, list):
+                    nodelist = [nodelist]
+                for n in nodelist:
+                    job_nodes[key].add(str(n))
 
-    summary = pd.DataFrame(rows)
+    # Count jobs by their distinct node count (skip jobs with 0 nodes).
+    counts = [len(nodes) for nodes in job_nodes.values() if nodes]
+    total_jobs = len(counts)
+    if total_jobs == 0:
+        raise SystemExit("[ERROR] No jobs with node information found.")
 
-    # --- Report ---
-    print(f"Total jobs: {total_jobs}\n")
-    print("Distribution of jobs by node count:")
-    print(summary.to_string(index=False))
-
-    single_node = nodecount_to_jobs.get(1, 0)
-    multi_node = total_jobs - single_node
-    print(f"\nSingle-node jobs: {single_node}")
-    print(f"Multi-node jobs:  {multi_node}")
+    hist = Counter(counts)
 
     args.output_csv.parent.mkdir(parents=True, exist_ok=True)
-    summary.to_csv(args.output_csv, index=False)
-    print(f"\nSaved summary to {args.output_csv}")
+    with open(args.output_csv, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["num_nodes", "num_jobs", "pct_of_jobs"])
+        for num_nodes in sorted(hist):
+            num_jobs = hist[num_nodes]
+            pct = round(100.0 * num_jobs / total_jobs, 2)
+            writer.writerow([num_nodes, num_jobs, pct])
+
+    print(f"Total jobs: {total_jobs}")
+    print(f"Written to: {args.output_csv}")
 
 
 if __name__ == "__main__":
