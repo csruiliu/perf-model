@@ -25,6 +25,14 @@ class JobParser:
         "nersc_ldms_dcgm_pcie_tx_bytes": "PCITX",
     }
 
+    # Column used to decide whether a GPU was actively used (long/raw name).
+    ACTIVITY_METRIC = "nersc_ldms_dcgm_gr_engine_active"
+
+    # A GPU counts as "active" if at least MIN_ACTIVE_FRACTION of its samples
+    # have an activity value of at least MIN_ACTIVE_VALUE.
+    MIN_ACTIVE_FRACTION = 0.1
+    MIN_ACTIVE_VALUE = 0.1
+
     def __init__(self, dcgm_file: str, metric_names: list[str]):
         self.dcgm_file = dcgm_file
         self.metric_names = metric_names
@@ -72,19 +80,25 @@ class JobParser:
         return gpu_dfs
 
     # ------------------------------------------------------------------ #
-    # Multi-job: read a PKL file -> {job_id: DataFrame}
+    # Multi-job: read a PKL file -> {job_key: DataFrame}
     # ------------------------------------------------------------------ #
-    def parsing_multi_job(self, num_gpu: int) -> dict[str, pd.DataFrame]:
+    def parsing_multi_job(self, num_gpu: int = 1) -> dict[str, pd.DataFrame]:
         """Read a PKL file containing {job_id: dcgm_df} and return a dict of
         cleaned/renamed DataFrames ready for the profiler/estimator.
 
-        Each raw dcgm_df contains data for 4 GPUs, but only one GPU has
-        non-zero activity (single-GPU jobs). We identify and keep that GPU.
+        Each raw dcgm_df contains data for 4 GPUs. We treat every GPU as an
+        individual single-GPU job: each raw dcgm_df is split into up to four
+        per-GPU DataFrames, and only GPUs that were actively used are kept.
+
+        A GPU is considered active when at least ``MIN_ACTIVE_FRACTION`` of its
+        samples have a ``ACTIVITY_METRIC`` value of at least ``MIN_ACTIVE_VALUE``.
+
+        The ``num_gpu`` argument is retained for API compatibility; each returned
+        entry corresponds to a single active GPU. Returned dict keys use the
+        composite form ``f"{job_id}_gpu{gpu_id}"`` to stay unique across the
+        GPUs of a job.
         """
-        print(
-            f"Processing multi-job PKL file (expecting {num_gpu} active GPU(s)/job): "
-            f"{self.dcgm_file}"
-        )
+        print(f"Processing multi-job PKL file (splitting into single-GPU jobs): {self.dcgm_file}")
 
         with open(self.dcgm_file, "rb") as f:
             job_to_df: dict = pickle.load(f)
@@ -96,15 +110,25 @@ class JobParser:
 
         for job_id, raw_df in job_to_df.items():
             try:
-                cleaned = self._process_pkl_job(job_id, raw_df, num_gpu)
+                gpu_results = self._process_pkl_job(job_id, raw_df)
             except ValueError as exc:
                 print(f"Warning: skipping job {job_id}: {exc}")
                 skipped.append(job_id)
                 continue
 
-            processed[job_id] = cleaned
+            if not gpu_results:
+                print(f"Warning: job {job_id} has no active GPU; skipping")
+                skipped.append(job_id)
+                continue
 
-        print(f"Successfully processed {len(processed)} job(s); skipped {len(skipped)} job(s)")
+            for gpu_id, gpu_df in gpu_results.items():
+                job_key = f"{job_id}_gpu{gpu_id}"
+                processed[job_key] = gpu_df
+
+        print(
+            f"Successfully produced {len(processed)} single-GPU job(s); "
+            f"skipped {len(skipped)} source job(s)"
+        )
         return processed
 
     # ------------------------------------------------------------------ #
@@ -207,18 +231,22 @@ class JobParser:
         )
 
     # ------------------------------------------------------------------ #
-    # Multi-job helper (PKL DataFrame preprocessing)
+    # Multi-job helpers (PKL DataFrame preprocessing)
     # ------------------------------------------------------------------ #
-    def _process_pkl_job(self, job_id, raw_df: pd.DataFrame, num_gpu: int) -> pd.DataFrame:
-        """Clean a single raw dcgm_df from the PKL file.
+    def _process_pkl_job(self, job_id, raw_df: pd.DataFrame) -> dict[int, pd.DataFrame]:
+        """Split a single raw dcgm_df (4 GPUs) into per-GPU single-GPU jobs.
 
-        The input PKL is assumed to already contain single-GPU data per job,
-        so we only verify the GPU count rather than identify the active GPU.
+        Each raw dcgm_df is assumed to contain data for multiple GPUs. We treat
+        each GPU as an individual job, keeping only GPUs that were actively used.
 
         Steps:
-          1. Verify the DataFrame contains exactly `num_gpu` GPU(s).
-          2. Rename the long DCGM column names to the short names.
-          3. Select and order the requested metric columns.
+          1. Validate the raw DataFrame and locate its distinct gpu_ids.
+          2. For each GPU, slice out its rows.
+          3. Decide whether the GPU was active (based on ACTIVITY_METRIC).
+          4. For active GPUs: rename long -> short column names, select/order the
+             requested metrics, coerce to numeric, and report zero counts.
+
+        Returns a dict {gpu_id: cleaned_df} containing only active GPUs.
         """
         if not isinstance(raw_df, pd.DataFrame):
             raise ValueError(f"expected a DataFrame, got {type(raw_df)}")
@@ -231,13 +259,49 @@ class JobParser:
         if not gpu_ids:
             raise ValueError("no GPU found")
 
-        if len(gpu_ids) != num_gpu:
-            raise ValueError(f"expected {num_gpu} GPU(s), found {len(gpu_ids)}: {gpu_ids}")
+        results: dict[int, pd.DataFrame] = {}
 
-        # With the single-GPU assumption there is exactly one id here.
-        gpu_id = gpu_ids[0]
-        gpu_df = raw_df[raw_df["gpu_id"] == gpu_id].copy()
+        for gpu_id in gpu_ids:
+            gpu_df = raw_df[raw_df["gpu_id"] == gpu_id].copy()
 
+            if gpu_df.empty:
+                continue
+
+            # Decide activity on the raw (long-named) activity column.
+            if not self._is_gpu_active(gpu_df):
+                print(f"Job {job_id}: GPU {gpu_id} inactive; skipping")
+                continue
+
+            cleaned = self._clean_gpu_df(gpu_df)
+
+            print(f"Job {job_id}: GPU {gpu_id} active, {len(cleaned)} rows")
+            self._count_zero(cleaned)
+            results[gpu_id] = cleaned
+
+        return results
+
+    def _is_gpu_active(self, gpu_df: pd.DataFrame) -> bool:
+        """Return True if the GPU was actively used.
+
+        A GPU is active when at least ``MIN_ACTIVE_FRACTION`` of its samples have
+        an ``ACTIVITY_METRIC`` value of at least ``MIN_ACTIVE_VALUE``.
+        The check runs on the raw (long) column name before renaming.
+        """
+        if self.ACTIVITY_METRIC not in gpu_df.columns:
+            raise ValueError(
+                f"activity metric column '{self.ACTIVITY_METRIC}' not found in DataFrame"
+            )
+
+        activity = pd.to_numeric(gpu_df[self.ACTIVITY_METRIC], errors="coerce").fillna(0.0)
+
+        if len(activity) == 0:
+            return False
+
+        active_fraction = (activity >= self.MIN_ACTIVE_VALUE).mean()
+        return active_fraction >= self.MIN_ACTIVE_FRACTION
+
+    def _clean_gpu_df(self, gpu_df: pd.DataFrame) -> pd.DataFrame:
+        """Rename, select, order, and numeric-coerce a single-GPU DataFrame."""
         # Keep only mapped columns, then rename long -> short names.
         keep_cols = [c for c in gpu_df.columns if c in self.COLUMN_RENAME_MAP]
         gpu_df = gpu_df[keep_cols].rename(columns=self.COLUMN_RENAME_MAP)
@@ -254,17 +318,10 @@ class JobParser:
         # Ensure numeric dtype (raw PKL may store objects / strings / N/A).
         result_df = result_df.apply(pd.to_numeric, errors="coerce").fillna(0.0)
 
-        print(f"Job {job_id}: GPU {gpu_id}, {len(result_df)} rows")
-        self._count_zero(result_df)
         return result_df
 
     def _get_gpu_ids(self, raw_df: pd.DataFrame) -> list:
-        """Return the sorted list of distinct gpu_ids present in the DataFrame.
-
-        The input PKL is assumed to already be filtered to single-GPU data,
-        so this is used to *verify* that assumption rather than to detect
-        which GPU was active.
-        """
+        """Return the sorted list of distinct gpu_ids present in the DataFrame."""
         if "gpu_id" not in raw_df.columns:
             raise ValueError("raw DataFrame has no 'gpu_id' column")
 
