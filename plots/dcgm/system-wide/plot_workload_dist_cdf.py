@@ -28,7 +28,7 @@ def main():
     # --- Plot ---
     fig, ax = plt.subplots(figsize=(6, 2.3))
 
-    ax.step(nodes, cdf, where="post", linewidth=1.8, color="#1f77b4")
+    ax.step(nodes, cdf, where="post", linewidth=2.2, color="cornflowerblue")
 
     ax.set_xscale("log")
     ax.set_xlabel("Number of Nodes", fontsize=13)
@@ -49,14 +49,14 @@ def main():
     for threshold in [1, 4, 32]:
         if threshold <= nodes.max():
             frac = jobs[nodes <= threshold].sum() / jobs.sum()
-            op = "" if threshold == nodes.min() else "\u2264"
+            op = "=" if threshold == nodes.min() else "\u2264"
             ax.annotate(
-                f"{op} {threshold} nodes ({frac * 100:.1f}%)",
+                f"{op} {threshold} ({frac * 100:.1f}%)",
                 xy=(threshold, frac),
-                xytext=(6, -10),
+                xytext=(2, -10),
                 textcoords="offset points",
                 fontsize=10,
-                color="dimgray",
+                color="black",
             )
 
     # Remove ticks on x axis (keep the labels)
