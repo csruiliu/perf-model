@@ -30,8 +30,8 @@ class JobParser:
 
     # A GPU counts as "active" if at least MIN_ACTIVE_FRACTION of its samples
     # have an activity value of at least MIN_ACTIVE_VALUE.
-    MIN_ACTIVE_FRACTION = 0.1
-    MIN_ACTIVE_VALUE = 0.1
+    MIN_ACTIVE_FRACTION = 0.5
+    MIN_ACTIVE_VALUE = 0.5
 
     def __init__(self, dcgm_file: str, metric_names: list[str]):
         self.dcgm_file = dcgm_file
