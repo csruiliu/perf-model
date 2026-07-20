@@ -34,7 +34,7 @@ class SystemWideAnalyzer:
             "ref_runtime": ref_runtime,
             "tgt_runtime": tgt_runtime,
             "speedup": (ref_runtime / tgt_runtime) if tgt_runtime > 0 else 0.0,
-            "node_hours": self.job_node_hours.get(job_id, ref_runtime) / (3600 * 1000),
+            "node_hours": ref_runtime / (3600 * 1000),
         }
         return job_id, record
 
