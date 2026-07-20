@@ -54,6 +54,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("-rh", "--ref_host", type=str, required=True)
     parser.add_argument("-th", "--tgt_host", type=str, default=None)
     parser.add_argument("--metrics", type=lambda s: s.split(","), required=True)
+    parser.add_argument("--max_workers", type=int, default=1)
     parser.add_argument("--cores_alloc", choices=["same", "all"], help="CPU Cores Allocation")
 
     # --- for multi-gpu ---
