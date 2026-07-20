@@ -5,7 +5,7 @@ import pandas as pd
 categories = ["H100-SXM", "A100-80GB"]
 columns = ["Measurement", "SMOCC Lower", "SMOCC Mid", "SMOCC Upper", "SMOCC Mock"]
 
-plt.rcParams['hatch.linewidth'] = 3   # default is 1.0
+plt.rcParams["hatch.linewidth"] = 3  # default is 1.0
 
 milc_fp64_a100_ref_df = pd.read_csv("milc-fp64-a100-ref.csv")
 categories_csv = list(dict.fromkeys(milc_fp64_a100_ref_df["category"]))
@@ -55,7 +55,7 @@ hatches = [
 x = np.arange(len(categories))
 n_cols = len(columns)
 width = 0.14
-bar_width = width * 0.9   # leave a small gap between bars
+bar_width = width * 0.9  # leave a small gap between bars
 
 fig, ax = plt.subplots(figsize=(12, 4))
 
@@ -80,7 +80,7 @@ for i, col in enumerate(columns):
             data[:, i],
             bar_width,
             label=col,
-            color="white",          # or "none" for transparent
+            color="white",  # or "none" for transparent
             hatch=hatches[i],
             edgecolor=colors[i],
             linewidth=3,
@@ -173,7 +173,7 @@ for i, col in enumerate(columns):
             data[:, i],
             bar_width,
             label=col,
-            color="white",          # or "none" for transparent
+            color="white",  # or "none" for transparent
             hatch=hatches[i],
             edgecolor=colors[i],
             linewidth=3,
@@ -266,7 +266,7 @@ for i, col in enumerate(columns):
             data[:, i],
             bar_width,
             label=col,
-            color="white",          # or "none" for transparent
+            color="white",  # or "none" for transparent
             hatch=hatches[i],
             edgecolor=colors[i],
             linewidth=3,
@@ -289,7 +289,7 @@ ax.tick_params(axis="x", length=0, labelsize=20)
 ax.tick_params(axis="y", direction="in", labelsize=20)
 
 # Set frame (spines) linewidth
-frame_linewidth = 2
+frame_linewidth = 2.5
 for spine in ["top", "right", "bottom", "left"]:
     ax.spines[spine].set_linewidth(frame_linewidth)
 

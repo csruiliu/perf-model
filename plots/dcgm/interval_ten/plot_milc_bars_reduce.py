@@ -102,7 +102,7 @@ ax.tick_params(axis="x", length=0, labelsize=20)
 ax.tick_params(axis="y", direction="in", labelsize=20)
 
 # Set frame (spines) linewidth
-frame_linewidth = 2
+frame_linewidth = 3
 for spine in ["top", "right", "bottom", "left"]:
     ax.spines[spine].set_linewidth(frame_linewidth)
 
