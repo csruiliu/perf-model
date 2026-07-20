@@ -42,7 +42,7 @@ GPUSpec = {
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 132
     },
     "BLACKWELL-FAKE": {
-        "fp64": 20, "tf64": 20, "fp32": 1500, "tf32": 1500, "fp16": 2000, "tf16": 2000,
+        "fp64": 1, "tf64": 1, "fp32": 1500, "tf32": 1500, "fp16": 3000, "tf16": 3000,
         "mem_bw": 7000, "pcie_bw": 256, "nvlink_bw": 1800, "l2_cache": 50,
         "base_clock": 1665, "boost_clock": 2032, "mem_clock": 2000,
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 148
