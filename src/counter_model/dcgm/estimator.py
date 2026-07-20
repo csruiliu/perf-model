@@ -105,7 +105,7 @@ class SingleGpuEstimator(BaseEstimator):
             # Other node time
             t_host_tgt = time_frac_ref.t_host / host_scaler.host_scale(cores_alloc)
             results["t_host"].append(t_host_tgt)
-            print(gpu_scaler.scale_kernel)
+
             # Process each SMOCC key
             for key in self.SMOCC_LEVELS:
                 # Calculate kernel and total time
