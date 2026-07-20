@@ -41,6 +41,12 @@ GPUSpec = {
         "base_clock": 1590, "boost_clock": 1980, "mem_clock": 1593,
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 132
     },
+    "BLACKWELL-FAKE": {
+        "fp64": 20, "tf64": 20, "fp32": 500, "tf32": 1500, "fp16": 2000, "tf16": 2000,
+        "mem_bw": 7700, "pcie_bw": 256, "nvlink_bw": 1800, "l2_cache": 50,
+        "base_clock": 1665, "boost_clock": 2032, "mem_clock": 2000,
+        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 148
+    },
     "RTX8000": {
         "fp64": 0.51, "tf64": 0, "fp32": 16.31, "tf32": 0, "fp16": 32.62, "tf16": 130.5,
         "mem_bw": 672, "pcie_bw": 32, "nvlink_bw": 100, "l2_cache": 6,
@@ -52,7 +58,7 @@ GPUSpec = {
         "mem_bw": 900, "pcie_bw": 15.75, "nvlink_bw": 100, "l2_cache": 6,
         "base_clock": 1312, "boost_clock": 1530, "mem_clock": 876,
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 96, "num_sm": 80
-    }
+    },
 }
 
 
