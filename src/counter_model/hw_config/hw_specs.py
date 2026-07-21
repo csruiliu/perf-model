@@ -59,6 +59,21 @@ GPUSpec = {
         "base_clock": 1312, "boost_clock": 1530, "mem_clock": 876,
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 96, "num_sm": 80
     },
+    ############# Hypothetical GPUs #############
+    # NG-2 = Non-GPU portion 2x
+    "H100-SXM-NG2": {
+        "fp64": 34, "tf64": 67, "fp32": 67, "tf32": 495, "fp16": 267.6, "tf16": 990,
+        "mem_bw": 3350, "pcie_bw": 256, "nvlink_bw": 900, "l2_cache": 50,
+        "base_clock": 1590, "boost_clock": 1980, "mem_clock": 1313,
+        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 132
+    },
+    # NG-4 = Non-GPU portion 4x
+    "BLACKWELL-ULTRA-NG4": {
+        "fp64": 34, "tf64": 67, "fp32": 67, "tf32": 495, "fp16": 267.6, "tf16": 990,
+        "mem_bw": 3350, "pcie_bw": 1024, "nvlink_bw": 900, "l2_cache": 50,
+        "base_clock": 1590, "boost_clock": 1980, "mem_clock": 1313,
+        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 132
+    },
 }
 
 HostSpec = {
@@ -74,7 +89,12 @@ HostSpec = {
     },
     "Einsteinium-RTX8000": {
         "cpu_clock_base": 2.45, "cpu_clock_boost": 3.5, "cpu_cores": 64, "mem_bw": 204.8, "pcie": 32
-    }
+    },
+    ############# Hypothetical Hosts #############
+    "Perlmutter-NG2": {
+        "cpu_clock_base": 4.9, "cpu_clock_boost": 7, "cpu_cores": 64, "mem_bw": 204.8, "pcie": 32,
+        "network_bw": 25
+    },
 }
 
 
