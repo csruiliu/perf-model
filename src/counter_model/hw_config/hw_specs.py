@@ -95,6 +95,10 @@ HostSpec = {
         "cpu_clock_base": 4.9, "cpu_clock_boost": 7, "cpu_cores": 64, "mem_bw": 204.8, "pcie": 32,
         "network_bw": 25
     },
+    "Perlmutter-NG4": {
+        "cpu_clock_base": 9.8, "cpu_clock_boost": 14, "cpu_cores": 64, "mem_bw": 204.8, "pcie": 32,
+        "network_bw": 25
+    },
 }
 
 
