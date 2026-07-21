@@ -41,11 +41,11 @@ GPUSpec = {
         "base_clock": 1590, "boost_clock": 1980, "mem_clock": 1593,
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 132
     },
-    "BLACKWELL-FAKE": {
-        "fp64": 1, "tf64": 1, "fp32": 1500, "tf32": 1500, "fp16": 3000, "tf16": 3000,
-        "mem_bw": 7000, "pcie_bw": 256, "nvlink_bw": 1800, "l2_cache": 50,
+    "BLACKWELL-ULTRA": {
+        "fp64": 1.3, "tf64": 1.3, "fp32": 80, "tf32": 2500, "fp16": 5000, "tf16": 5000,
+        "mem_bw": 8000, "pcie_bw": 256, "nvlink_bw": 1800, "l2_cache": 192,
         "base_clock": 1665, "boost_clock": 2032, "mem_clock": 2000,
-        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 148
+        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 160
     },
     "RTX8000": {
         "fp64": 0.51, "tf64": 0, "fp32": 16.31, "tf32": 0, "fp16": 32.62, "tf16": 130.5,
@@ -60,7 +60,6 @@ GPUSpec = {
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 96, "num_sm": 80
     },
 }
-
 
 HostSpec = {
     "Perlmutter": {
