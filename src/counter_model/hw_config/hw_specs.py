@@ -69,10 +69,10 @@ GPUSpec = {
     },
     # NG-4 = Non-GPU portion 4x
     "BLACKWELL-ULTRA-NG4": {
-        "fp64": 34, "tf64": 67, "fp32": 67, "tf32": 495, "fp16": 267.6, "tf16": 990,
-        "mem_bw": 3350, "pcie_bw": 1024, "nvlink_bw": 900, "l2_cache": 50,
-        "base_clock": 1590, "boost_clock": 1980, "mem_clock": 1313,
-        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 132
+        "fp64": 1.3, "tf64": 1.3, "fp32": 80, "tf32": 2500, "fp16": 5000, "tf16": 5000,
+        "mem_bw": 8000, "pcie_bw": 1024, "nvlink_bw": 1800, "l2_cache": 192,
+        "base_clock": 1665, "boost_clock": 2032, "mem_clock": 2000,
+        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 160
     },
 }
 
