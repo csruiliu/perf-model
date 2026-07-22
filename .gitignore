@@ -11,7 +11,7 @@
 **/__pycache__
 **/*.egg-info/
 **/build
-**/*.parquet
+*.parquet
 
 # Prerequisites
 *.d
