@@ -1,5 +1,6 @@
 import numpy as np
 
+from counter_model.dcgm.constants import GPU_MIN_INTENSITY_THRESHOLD
 from counter_model.hw_config.hw_specs import GPU, Host
 
 
@@ -57,8 +58,6 @@ class HostScaler:
 class GpuScaler:
     """Calculates computational intensities"""
 
-    METRIC_THRESHOLD = 0.01
-
     def __init__(self, ref_gpu: GPU, tgt_gpu: GPU, smocc_levels: list[str]):
         self.ref_gpu = ref_gpu
         self.tgt_gpu = tgt_gpu
@@ -95,7 +94,7 @@ class GpuScaler:
         # so their ratio contribution collapses to 0 and won't drive the min.
         gract_keys = ("tenso_gract", "drama_gract", "fp64a_gract", "fp32a_gract", "fp16a_gract")
         for key in gract_keys:
-            if mv_gract_norm[key] < self.METRIC_THRESHOLD:
+            if mv_gract_norm[key] < GPU_MIN_INTENSITY_THRESHOLD:
                 mv_gract_norm[key] = np.inf
 
         scale_factors = [

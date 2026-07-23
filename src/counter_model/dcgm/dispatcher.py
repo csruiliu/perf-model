@@ -27,7 +27,7 @@ class Dispatcher:
             )
 
     def single_job_single_gpu(self):
-        job_parser = JobParser(self.args.dcgm_input, self.args.metrics)
+        job_parser = JobParser(self.args.dcgm_input)
         profiled_df = job_parser.parsing_single_job(num_gpu=1)
 
         # Create and run reference profiler
@@ -42,7 +42,7 @@ class Dispatcher:
         pass
 
     def multi_job_single_gpu(self):
-        job_parser = JobParser(self.args.dcgm_input, self.args.metrics)
+        job_parser = JobParser(self.args.dcgm_input)
         job_to_df = job_parser.parsing_multi_job(num_gpu=1)
 
         analyzer = SystemWideAnalyzer(self.args)

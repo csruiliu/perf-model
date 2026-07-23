@@ -53,5 +53,5 @@ class SystemWideAnalyzer:
 
         result_df = pd.DataFrame.from_dict(records, orient="index")
         result_df.index.name = "job_id"
-        result_df.to_parquet("speedup_dist.parquet")
+        result_df.to_parquet(self.args.agg_results_dir + "/speedup_dist.parquet")
         return result_df

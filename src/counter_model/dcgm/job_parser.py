@@ -2,40 +2,24 @@ import pickle
 import re
 
 import pandas as pd
+from constants import (
+    DCGM_COUNTERS_MAP,
+    GPU_ACTIVE_THRESHOLD_METRIC,
+    GPU_INTENSIVE_MIN_ACTIVE_FRACTION,
+    GPU_INTENSIVE_MIN_ACTIVE_VALUE,
+    LDMS_COLUMN_RENAME_MAP,
+)
 
 
 class JobParser:
     """Handles DCGM metrics file processing for single-job and multi-job modes."""
 
-    GPU_PATTERN = re.compile(r"^GPU \d+\s")
-    HEADER_PATTERN = re.compile(r"^#Entity")
+    gpu_pattern = re.compile(r"^GPU \d+\s")
+    header_pattern = re.compile(r"^#Entity")
 
-    # Column name mappings for multi-job (PKL) DCGM data.
-    COLUMN_RENAME_MAP = {
-        "nersc_ldms_dcgm_gr_engine_active": "GRACT",
-        "nersc_ldms_dcgm_dram_active": "DRAMA",
-        "nersc_ldms_dcgm_sm_occupancy": "SMOCC",
-        "nersc_ldms_dcgm_tensor_active": "TENSO",
-        "nersc_ldms_dcgm_fp16_active": "FP16A",
-        "nersc_ldms_dcgm_fp32_active": "FP32A",
-        "nersc_ldms_dcgm_fp64_active": "FP64A",
-        "nersc_ldms_dcgm_nvlink_rx_bytes": "NVLRX",
-        "nersc_ldms_dcgm_nvlink_tx_bytes": "NVLTX",
-        "nersc_ldms_dcgm_pcie_rx_bytes": "PCIRX",
-        "nersc_ldms_dcgm_pcie_tx_bytes": "PCITX",
-    }
-
-    # Column used to decide whether a GPU was actively used (long/raw name).
-    ACTIVITY_METRIC = "nersc_ldms_dcgm_gr_engine_active"
-
-    # A GPU counts as "active" if at least MIN_ACTIVE_FRACTION of its samples
-    # have an activity value of at least MIN_ACTIVE_VALUE.
-    MIN_ACTIVE_FRACTION = 0.5
-    MIN_ACTIVE_VALUE = 0.5
-
-    def __init__(self, dcgm_file: str, metric_names: list[str]):
+    def __init__(self, dcgm_file: str):
         self.dcgm_file = dcgm_file
-        self.metric_names = metric_names
+        self.metric_names = list(DCGM_COUNTERS_MAP.keys())
 
     # ------------------------------------------------------------------ #
     # Single-job: read a single DCGM file
@@ -150,9 +134,9 @@ class JobParser:
         gpu_data: dict[int, list[list[float]]] = {}
 
         for line in lines:
-            if self.HEADER_PATTERN.match(line):
+            if self.header_pattern.match(line):
                 continue
-            if not self.GPU_PATTERN.match(line):
+            if not self.gpu_pattern.match(line):
                 continue
 
             parts = re.split(r"\s{3,}", line.strip())
@@ -190,7 +174,7 @@ class JobParser:
     def _parse_header(self, lines: list[str]) -> tuple[list[str], list[int]]:
         """Parse the header line and find metric column indices."""
         for line in lines:
-            if self.HEADER_PATTERN.match(line):
+            if self.header_pattern.match(line):
                 header_columns = [col.strip() for col in re.split(r"\s{2,}", line.strip())]
                 metric_indices = self._get_metric_indices(header_columns)
                 return header_columns, metric_indices
@@ -287,24 +271,24 @@ class JobParser:
         an ``ACTIVITY_METRIC`` value of at least ``MIN_ACTIVE_VALUE``.
         The check runs on the raw (long) column name before renaming.
         """
-        if self.ACTIVITY_METRIC not in gpu_df.columns:
+        if GPU_ACTIVE_THRESHOLD_METRIC not in gpu_df.columns:
             raise ValueError(
-                f"activity metric column '{self.ACTIVITY_METRIC}' not found in DataFrame"
+                f"activity metric column '{GPU_ACTIVE_THRESHOLD_METRIC}' not found in DataFrame"
             )
 
-        activity = pd.to_numeric(gpu_df[self.ACTIVITY_METRIC], errors="coerce").fillna(0.0)
+        activity = pd.to_numeric(gpu_df[GPU_ACTIVE_THRESHOLD_METRIC], errors="coerce").fillna(0.0)
 
         if len(activity) == 0:
             return False
 
-        active_fraction = (activity >= self.MIN_ACTIVE_VALUE).mean()
-        return active_fraction >= self.MIN_ACTIVE_FRACTION
+        active_fraction = (activity >= GPU_INTENSIVE_MIN_ACTIVE_VALUE).mean()
+        return active_fraction >= GPU_INTENSIVE_MIN_ACTIVE_FRACTION
 
     def _clean_gpu_df(self, gpu_df: pd.DataFrame) -> pd.DataFrame:
         """Rename, select, order, and numeric-coerce a single-GPU DataFrame."""
         # Keep only mapped columns, then rename long -> short names.
-        keep_cols = [c for c in gpu_df.columns if c in self.COLUMN_RENAME_MAP]
-        gpu_df = gpu_df[keep_cols].rename(columns=self.COLUMN_RENAME_MAP)
+        keep_cols = [c for c in gpu_df.columns if c in LDMS_COLUMN_RENAME_MAP]
+        gpu_df = gpu_df[keep_cols].rename(columns=LDMS_COLUMN_RENAME_MAP)
 
         # Validate all requested metrics are available after renaming.
         missing = [m for m in self.metric_names if m not in gpu_df.columns]

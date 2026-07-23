@@ -4,9 +4,10 @@ from abc import ABC, abstractmethod
 import numpy as np
 import pandas as pd
 
-from counter_model.dcgm.gpu_metrics import MetricValues
-from counter_model.dcgm.gpu_time import TimeSlicer
+from counter_model.dcgm.constants import SMOCC_LEVELS
+from counter_model.dcgm.data_classes import MetricValues
 from counter_model.dcgm.scaler import GpuScaler, HostScaler, get_tf_weights
+from counter_model.dcgm.time_aggregator import TimeSlicer
 from counter_model.hw_config.hw_specs import GPU, Host
 
 
@@ -25,9 +26,6 @@ class BaseEstimator(ABC):
 class SingleGpuEstimator(BaseEstimator):
     """Estimating performance on target GPU"""
 
-    # Class-level constants
-    SMOCC_LEVELS = ["lower", "mid", "upper", "mock"]
-
     def __init__(self, args: argparse.Namespace):
         self.ref_gpu = GPU(gpu_name=args.ref_gpu)
         self.tgt_gpu = GPU(gpu_name=args.tgt_gpu)
@@ -38,7 +36,7 @@ class SingleGpuEstimator(BaseEstimator):
     def run(self, dcgm_df: pd.DataFrame, args: argparse.Namespace, is_printout: bool):
         """Predict performance on target hardware"""
         # Calculate target metrics
-        target_metrics = self._scale_metrics(dcgm_df, args.metrics, args.cores_alloc)
+        target_metrics = self._scale_metrics(dcgm_df, args.cores_alloc)
 
         # Get time slice
         time_window = self.time_slicer.get_time_window(
@@ -59,25 +57,23 @@ class SingleGpuEstimator(BaseEstimator):
         if is_printout:
             self.print_target_results(ws, est_flops, est_membw, self.tgt_gpu.get_name())
 
-        return {level: float(sum(ws[f"t_total_{level}"])) for level in self.SMOCC_LEVELS}
+        return {level: float(sum(ws[f"t_total_{level}"])) for level in SMOCC_LEVELS}
 
-    def _scale_metrics(
-        self, dcgm_df: pd.DataFrame, metrics: list[str], cores_alloc: str
-    ) -> dict[str, list[float]]:
+    def _scale_metrics(self, dcgm_df: pd.DataFrame, cores_alloc: str) -> dict[str, list[float]]:
         """Calculate metrics for target hardware"""
         time_results = ["t_kernel", "t_total", "dram", "flops"]
 
-        results = {f"{metric}_{key}": [] for metric in time_results for key in self.SMOCC_LEVELS}
+        results = {f"{component}_{key}": [] for component in time_results for key in SMOCC_LEVELS}
 
         # host and pcie time are not scaled by smocc
         results["t_host"] = []
         results["t_pcie"] = []
 
-        gpu_scaler = GpuScaler(self.ref_gpu, self.tgt_gpu, self.SMOCC_LEVELS)
+        gpu_scaler = GpuScaler(self.ref_gpu, self.tgt_gpu, SMOCC_LEVELS)
         host_scaler = HostScaler(self.ref_host, self.tgt_host)
 
         for row in dcgm_df.itertuples(index=False):
-            mv = MetricValues.from_row(row, metrics)
+            mv = MetricValues.from_row(row)
             mv_gract_norm = mv.gract_normalization()
 
             # Calculate weights for this row
@@ -107,7 +103,7 @@ class SingleGpuEstimator(BaseEstimator):
             results["t_host"].append(t_host_tgt)
 
             # Process each SMOCC key
-            for key in self.SMOCC_LEVELS:
+            for key in SMOCC_LEVELS:
                 # Calculate kernel and total time
                 t_kernel_tgt = time_frac_ref.t_kernel / gpu_scaler.scale_kernel.get(key)
                 results[f"t_kernel_{key}"].append(t_kernel_tgt)
@@ -127,13 +123,18 @@ class SingleGpuEstimator(BaseEstimator):
 
         return results
 
-    def _estimate_peak_rate(self, metrics: dict[str, list[float]], prefix: str) -> dict[str, float]:
+    def _estimate_peak_rate(
+        self, est_factor_samples: dict[str, list[float]], prefix: str
+    ) -> dict[str, float]:
         """Generic method to calculate aggregated metrics (FLOPS or memory bandwidth)"""
-        return {f"{prefix}_{key}": np.mean(metrics[f"{prefix}_{key}"]) for key in self.SMOCC_LEVELS}
+        return {
+            f"{prefix}_{key}": np.mean(est_factor_samples[f"{prefix}_{key}"])
+            for key in SMOCC_LEVELS
+        }
 
     def print_target_results(
         self,
-        metrics: dict[str, list[float]],
+        est_factor_samples: dict[str, list[float]],
         flops: dict[str, float],
         mem_bw: dict[str, float],
         gpu: str,
@@ -153,21 +154,31 @@ class SingleGpuEstimator(BaseEstimator):
         print(f"Estimated Memory Bandwidth [Mock SMOCC]: {mem_bw.get('dram_mock'):.2f} GB/s")
 
         print(
-            f"\nEstimated Kernel Time [Lower SMOCC]: {sum(metrics['t_kernel_lower']) / 1000:.2f} s"
+            f"\nEstimated Kernel Time [Lower SMOCC]: {sum(est_factor_samples['t_kernel_lower']) / 1000:.2f} s"
         )
-        print(f"Estimated Kernel Time [Mid SMOCC]:   {sum(metrics['t_kernel_mid']) / 1000:.2f} s")
-        print(f"Estimated Kernel Time [Upper SMOCC]: {sum(metrics['t_kernel_upper']) / 1000:.2f} s")
-        print(f"Estimated Kernel Time [Mock SMOCC]: {sum(metrics['t_kernel_mock']) / 1000:.2f} s")
+        print(
+            f"Estimated Kernel Time [Mid SMOCC]:   {sum(est_factor_samples['t_kernel_mid']) / 1000:.2f} s"
+        )
+        print(
+            f"Estimated Kernel Time [Upper SMOCC]: {sum(est_factor_samples['t_kernel_upper']) / 1000:.2f} s"
+        )
+        print(
+            f"Estimated Kernel Time [Mock SMOCC]: {sum(est_factor_samples['t_kernel_mock']) / 1000:.2f} s"
+        )
 
-        print(f"\nEstimated PCIe Time: {sum(metrics['t_pcie']) / 1000:.2f} s")
-        print(f"\nEstimated Host Time: {sum(metrics['t_host']) / 1000:.2f} s")
+        print(f"\nEstimated PCIe Time: {sum(est_factor_samples['t_pcie']) / 1000:.2f} s")
+        print(f"\nEstimated Host Time: {sum(est_factor_samples['t_host']) / 1000:.2f} s")
 
         print(
-            f"\nEstimated Total Runtime [Lower SMOCC]: {sum(metrics['t_total_lower']) / 1000:.2f} s"
+            f"\nEstimated Total Runtime [Lower SMOCC]: {sum(est_factor_samples['t_total_lower']) / 1000:.2f} s"
         )
-        print(f"Estimated Total Runtime [Mid SMOCC]:   {sum(metrics['t_total_mid']) / 1000:.2f} s")
         print(
-            f"Estimated Total Runtime [Upper SMOCC]: {sum(metrics['t_total_upper']) / 1000:.2f} s"
+            f"Estimated Total Runtime [Mid SMOCC]:   {sum(est_factor_samples['t_total_mid']) / 1000:.2f} s"
         )
-        print(f"Estimated Total Runtime [Mock SMOCC]: {sum(metrics['t_total_mock']) / 1000:.2f} s")
+        print(
+            f"Estimated Total Runtime [Upper SMOCC]: {sum(est_factor_samples['t_total_upper']) / 1000:.2f} s"
+        )
+        print(
+            f"Estimated Total Runtime [Mock SMOCC]: {sum(est_factor_samples['t_total_mock']) / 1000:.2f} s"
+        )
         print(f"{'=' * 60}\n")

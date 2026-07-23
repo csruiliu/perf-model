@@ -53,12 +53,18 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("-tg", "--tgt_gpu", type=str, default=None)
     parser.add_argument("-rh", "--ref_host", type=str, required=True)
     parser.add_argument("-th", "--tgt_host", type=str, default=None)
-    parser.add_argument("--metrics", type=lambda s: s.split(","), required=True)
-    parser.add_argument("--max_workers", type=int, default=1)
-    parser.add_argument("--cores_alloc", choices=["same", "all"], help="CPU Cores Allocation")
+    parser.add_argument(
+        "--cores_alloc",
+        choices=["same", "all"],
+        help="same: ref and tgt hosts use the same cores. all: ref and tgt hosts use all cores, which are not always the same.",
+    )
 
     # --- for multi-gpu ---
     parser.add_argument("--agg_interval_ms", type=int, help="[Multi-GPU] Aggregation interval (ms)")
+
+    # --- for multi jobs ---
+    parser.add_argument("--agg_results_dir", type=int, help="[Multi-GPU] Aggregated results output")
+    parser.add_argument("--max_workers", type=int, default=1)
 
     args = parser.parse_args()
     _validate(parser, args)
@@ -75,6 +81,7 @@ def _validate(parser, args):
     # Target GPU is required for analysis
     if args.job_mode == "multi":
         required.update({"tgt_gpu": args.tgt_gpu})
+        required.update({"agg_results_dir": args.agg_results_dir})
 
     missing = [n for n, v in required.items() if v is None]
     if missing:

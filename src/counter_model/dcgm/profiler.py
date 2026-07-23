@@ -2,10 +2,10 @@ import argparse
 from abc import ABC, abstractmethod
 
 import pandas as pd
+from data_classes import MetricValues
 
-from counter_model.dcgm.gpu_metrics import MetricValues
-from counter_model.dcgm.gpu_time import TimeSlicer
 from counter_model.dcgm.scaler import get_tf_weights
+from counter_model.dcgm.time_aggregator import TimeSlicer
 from counter_model.hw_config.hw_specs import GPU
 
 
@@ -36,7 +36,7 @@ class SingleGpuProfiler(BaseProfiler):
         results["t_host"] = []
 
         for row in profiled_df.itertuples(index=False):
-            mv = MetricValues.from_row(row, args.metrics)
+            mv = MetricValues.from_row(row)
             mv_gract_norm = mv.gract_normalization()
 
             # Calculate weights for this row
@@ -83,7 +83,7 @@ class SingleGpuProfiler(BaseProfiler):
         return float(sum(ws["t_kernel"]) + sum(ws["t_pcie"]) + sum(ws["t_host"]))
 
     def print_reference_results(
-        self, metrics: dict[str, list[float]], flops: float, mem_bw: float, gpu: str
+        self, est_component_sample: dict[str, list[float]], flops: float, mem_bw: float, gpu: str
     ):
         """Print reference hardware results, convert runtime(ms) to second"""
         """No need to have total time"""
@@ -92,7 +92,7 @@ class SingleGpuProfiler(BaseProfiler):
         print(f"Estimated TFLOPS: {flops:.2f}")
         print(f"Estimated GPU Memory Bandwidth: {mem_bw:.2f} GB/s")
 
-        print(f"\nEstimated Kernel Time: {sum(metrics['t_kernel']) / 1000:.2f} s")
-        print(f"\nEstimated PCIe Time: {sum(metrics['t_pcie']) / 1000:.2f} s")
-        print(f"Estimated Host Time: {sum(metrics['t_host']) / 1000:.2f} s")
+        print(f"\nEstimated Kernel Time: {sum(est_component_sample['t_kernel']) / 1000:.2f} s")
+        print(f"\nEstimated PCIe Time: {sum(est_component_sample['t_pcie']) / 1000:.2f} s")
+        print(f"Estimated Host Time: {sum(est_component_sample['t_host']) / 1000:.2f} s")
         print(f"{'=' * 60}\n")
