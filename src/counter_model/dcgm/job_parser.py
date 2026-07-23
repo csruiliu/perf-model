@@ -2,7 +2,8 @@ import pickle
 import re
 
 import pandas as pd
-from constants import (
+
+from counter_model.dcgm.constants import (
     DCGM_COUNTERS_MAP,
     GPU_ACTIVE_THRESHOLD_METRIC,
     GPU_INTENSIVE_MIN_ACTIVE_FRACTION,

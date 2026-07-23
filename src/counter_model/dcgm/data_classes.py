@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 
 import pandas as pd
-from constants import DCGM_COUNTERS_MAP
+
+from counter_model.dcgm.constants import DCGM_COUNTERS_MAP
 
 
 @dataclass
