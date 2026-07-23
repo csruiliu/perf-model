@@ -42,10 +42,10 @@ GPUSpec = {
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 132
     },
     "BLACKWELL-ULTRA": {
-        "fp64": 1.3, "tf64": 1.3, "fp32": 80, "tf32": 2500, "fp16": 5000, "tf16": 5000,
-        "mem_bw": 8000, "pcie_bw": 256, "nvlink_bw": 1800, "l2_cache": 192,
-        "base_clock": 1665, "boost_clock": 2032, "mem_clock": 2000,
-        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 160
+        "fp64": 1.2, "tf64": 1.2, "fp32": 75, "tf32": 1100, "fp16": 2200, "tf16": 2200,
+        "mem_bw": 7700, "pcie_bw": 256, "nvlink_bw": 1800, "l2_cache": 192,
+        "base_clock": 1665, "boost_clock": 2032, "mem_clock": 3996,
+        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 148
     },
     "RTX8000": {
         "fp64": 0.51, "tf64": 0, "fp32": 16.31, "tf32": 0, "fp16": 32.62, "tf16": 130.5,
@@ -69,10 +69,10 @@ GPUSpec = {
     },
     # NG-4 = Non-GPU portion 4x
     "BLACKWELL-ULTRA-NG4": {
-        "fp64": 1.3, "tf64": 1.3, "fp32": 80, "tf32": 2500, "fp16": 5000, "tf16": 5000,
-        "mem_bw": 8000, "pcie_bw": 1024, "nvlink_bw": 1800, "l2_cache": 192,
-        "base_clock": 1665, "boost_clock": 2032, "mem_clock": 2000,
-        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 160
+        "fp64": 1.2, "tf64": 1.2, "fp32": 75, "tf32": 1100, "fp16": 2200, "tf16": 2200,
+        "mem_bw": 7700, "pcie_bw": 1024, "nvlink_bw": 1800, "l2_cache": 192,
+        "base_clock": 1665, "boost_clock": 2032, "mem_clock": 3996,
+        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 148
     },
 }
 
