@@ -2,8 +2,8 @@ import argparse
 from abc import ABC, abstractmethod
 
 import pandas as pd
-from data_classes import MetricValues
 
+from counter_model.dcgm.data_classes import MetricValues
 from counter_model.dcgm.scaler import get_tf_weights
 from counter_model.dcgm.time_aggregator import TimeSlicer
 from counter_model.hw_config.hw_specs import GPU
