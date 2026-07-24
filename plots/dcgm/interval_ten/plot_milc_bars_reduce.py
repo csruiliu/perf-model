@@ -47,10 +47,10 @@ hatches = [
 
 x = np.arange(len(categories))
 n_cols = len(columns)
-width = 0.14
+width = 0.17
 bar_width = width * 0.9  # leave a small gap between bars
 
-fig, ax = plt.subplots(figsize=(12, 4))
+fig, ax = plt.subplots(figsize=(12, 4.5))
 
 # Reference measurement values (column 0) for each category
 measurement = data[:, 0]
@@ -84,22 +84,22 @@ for i, col in enumerate(columns):
         # Signed error percentage relative to the measurement bar
         err_pct = (data[:, i] - measurement) / measurement * 100
         labels = [f"{p:+.1f}%" for p in err_pct]
-        ax.bar_label(bars, labels=labels, padding=2, fontsize=15)
+        ax.bar_label(bars, labels=labels, padding=2, fontsize=17)
 
 # ax.set_xlabel('Category')
-ax.set_ylabel("Overall Runtime (second)", fontsize=20)
+ax.set_ylabel("Overall Runtime (second)", fontsize=22)
 # ax.set_title('Comparison by Category')
 ax.set_xticks(x)
 ax.set_xticklabels(categories)
-ax.legend(ncol=3, loc="upper left", columnspacing=0.6, fontsize=15)
+ax.legend(ncol=3, loc="upper left", columnspacing=0.6, fontsize=19)
 
 ax.set_ylim(0, np.max(data) * 1.5)
 
 # Remove ticks on x axis (keep the labels)
-ax.tick_params(axis="x", length=0, labelsize=20)
+ax.tick_params(axis="x", length=0, labelsize=22)
 
 # Make y axis ticks point inward
-ax.tick_params(axis="y", direction="in", labelsize=20)
+ax.tick_params(axis="y", direction="in", labelsize=22)
 
 # Set frame (spines) linewidth
 frame_linewidth = 3
@@ -107,4 +107,4 @@ for spine in ["top", "right", "bottom", "left"]:
     ax.spines[spine].set_linewidth(frame_linewidth)
 
 fig.tight_layout()
-plt.savefig("milc_fp32_ref_h100_reduce.png", dpi=150)
+plt.savefig("milc_fp32_ref_h100_reduce.png", dpi=300, bbox_inches="tight")
