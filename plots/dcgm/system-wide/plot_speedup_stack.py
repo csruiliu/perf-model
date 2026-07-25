@@ -93,25 +93,16 @@ def _draw_panel(
 
     # X label only on the bottom panel.
     if show_xlabel:
-        ax.set_xlabel("Speedup Relative to A100", fontsize=19)
-    ax.set_ylabel("PDF (weighted by node-hours)" if density else "Node-hours", fontsize=19)
-    ax2.set_ylabel("Cumulative percentage (%)", fontsize=17)
-    ax2.set_ylim(0, 105)
+        ax.set_xlabel("Speedup Relative to A100", fontsize=26)
+    ax.set_ylabel("PDF (weighted by node-hours)" if density else "Node-hours", fontsize=24)
+    ax2.set_ylabel("Cumulative Percentage (%)", fontsize=21)
 
-    # Fix x-axis range and ticks: 0 to 3, every 0.2.
-    # ax.set_xlim(0.9, 3.1)
-    ax.set_xlim(-0.1, 4.1)
-    # ax.set_xticks(np.arange(1, 3 + 0.01, 0.2))
-    ax.set_xticks(np.arange(0, 4 + 0.01, 0.2))
-    # ax.set_ylim(0, 700000)
-    ax.set_ylim(0, 150000)
-    ax.tick_params(axis="x", length=6)
+    ax2.set_ylim(0, 110)
 
     # Vertical split line at speedup == 1.0 (drawn on twin so it's above bars).
-    ax2.axvline(x=1.0, color="dimgray", linestyle="dashed", linewidth=2, zorder=5)
+    # ax2.axvline(x=1.0, color="dimgray", linestyle="dashed", linewidth=2, zorder=5)
 
-    ax.tick_params(which="both", direction="in", labelsize=18)
-    ax2.tick_params(which="both", direction="in", labelsize=18)
+    ax2.tick_params(which="both", direction="in", labelsize=23)
 
     # Legend to identify which GPU each panel corresponds to (since the x-label
     # is shared). Draw it on ax2 (the top-most twin axis) so it renders above
@@ -121,7 +112,7 @@ def _draw_panel(
         handles,
         labels,
         loc="upper left",
-        fontsize=12,
+        fontsize=18,
         frameon=True,  # show the box
         framealpha=1.0,  # opaque so the line doesn't show through
         edgecolor="black",  # box border color
@@ -146,7 +137,7 @@ def plot_speedup_distribution_stacked(
 ):
     """Two stacked panels sharing the x-axis, no vertical gap between them."""
     fig, (ax_top, ax_bot) = plt.subplots(
-        2, 1, figsize=(13, 10), sharex=True, gridspec_kw={"hspace": 0.0}
+        2, 1, figsize=(13, 10.5), sharex=True, gridspec_kw={"hspace": 0.0}
     )
 
     # --- Top panel (e.g. Blackwell-Ultra) ---
@@ -154,10 +145,10 @@ def plot_speedup_distribution_stacked(
         ax_top,
         top_df,
         top_name,
-        # color="gold",
-        # edgecolor="darkgoldenrod",
-        color="palegreen",
-        edgecolor="forestgreen",
+        color="gold",
+        edgecolor="darkgoldenrod",
+        # color="palegreen",
+        # edgecolor="forestgreen",
         bins=bins,
         density=density,
         show_xlabel=False,
@@ -168,24 +159,32 @@ def plot_speedup_distribution_stacked(
         ax_bot,
         bottom_df,
         bottom_name,
-        # color="sandybrown",
-        # edgecolor="darkorange",
-        color="lightskyblue",
-        edgecolor="dodgerblue",
+        color="sandybrown",
+        edgecolor="darkorange",
+        # color="lightskyblue",
+        # edgecolor="dodgerblue",
         bins=bins,
         density=density,
         show_xlabel=True,
-        legend_label="Hypothetical-Blackwell-Ultra\n(Non-GPU Portion Scale Up 4x)",
+        # legend_label="Hypothetical-Blackwell-Ultra\n(Non-GPU Portion Scale Up 4x)",
+        legend_label="H100\n(Non-GPU Portion Scale Up 2x)",
     )
-    # ticks = np.arange(0, 700000, 100000)
-    ticks = np.arange(0, 160000, 30000)
+    ticks = np.arange(0, 900000, 200000)
+    # ticks = np.arange(0, 160000, 30000)
     for ax in (ax_top, ax_bot):
         ax.set_yticks(ticks)
-        # ax.set_ylim(0, 700000)
-        ax.set_ylim(0, 160000)
+        ax.set_ylim(0, 900000)
+        # ax.set_ylim(0, 160000)
+        ax.set_xlim(0.9, 3.1)
+        # ax.set_xlim(-0.1, 4.1)
+        ax.set_xticks(np.arange(1, 3 + 0.01, 0.2))
+        # ax.set_xticks(np.arange(0, 4 + 0.01, 0.2))
+
+        ax.tick_params(axis="x", length=4.5, width=2)
+        ax.tick_params(which="both", direction="in", labelsize=23)
     # ax_top.get_yticklabels()[0].set_visible(False)
 
-    fig.savefig(outpath, dpi=200, format="png", bbox_inches="tight")
+    fig.savefig(outpath, dpi=300, format="png", bbox_inches="tight")
     plt.close(fig)
 
 
@@ -241,8 +240,8 @@ def main():
         bottom_df=bottom_df,
         bottom_name=args.bottom_gpu_name,
         outpath=args.outpath,
-        # bins=np.arange(1, 3.1, 0.05),
-        bins=np.arange(0, 4.1, 0.05),
+        bins=np.arange(1, 2.6, 0.05),
+        # bins=np.arange(0, 4.1, 0.05),
         density=args.density,
     )
     print(f"Plot saved to {args.outpath}")
