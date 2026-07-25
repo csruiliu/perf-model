@@ -3,6 +3,7 @@ from abc import ABC, abstractmethod
 
 import pandas as pd
 
+from counter_model.dcgm.constants import GPU_MIN_INTENSITY_THRESHOLD
 from counter_model.dcgm.data_classes import MetricValues
 from counter_model.dcgm.scaler import get_tf_weights
 from counter_model.dcgm.time_aggregator import TimeSlicer
@@ -32,8 +33,7 @@ class SingleGpuProfiler(BaseProfiler):
 
         results = {}
         results["t_kernel"] = []
-        results["t_pcie"] = []
-        results["t_host"] = []
+        results["t_pcie_host"] = []
 
         for row in profiled_df.itertuples(index=False):
             mv = MetricValues.from_row(row)
@@ -63,14 +63,17 @@ class SingleGpuProfiler(BaseProfiler):
             # Calculate time fraction on ref gpu
             time_frac_ref = self.time_slicer.time_fraction_single_gpu(mv)
             results["t_kernel"].append(time_frac_ref.t_kernel)
-            results["t_pcie"].append(time_frac_ref.t_pcie)
-            results["t_host"].append(time_frac_ref.t_host)
+
+            if mv.gract > GPU_MIN_INTENSITY_THRESHOLD:
+                results["t_pcie_host"].append(max(time_frac_ref.t_pcie, time_frac_ref.t_host))
+            else:
+                results["t_pcie_host"].append(time_frac_ref.t_pcie + time_frac_ref.t_host)
 
         time_window = self.time_slicer.get_time_window(
             args.overall_runtime_ms,
             args.start_timestamp,
             args.end_timestamp,
-            len(results["t_host"]),
+            len(results["t_pcie_host"]),
         )
 
         ws = time_window.extract_from_dict(results)
@@ -80,7 +83,7 @@ class SingleGpuProfiler(BaseProfiler):
         if is_printout:
             self.print_reference_results(ws, flops, membw, self.gpu.get_name())
 
-        return float(sum(ws["t_kernel"]) + sum(ws["t_pcie"]) + sum(ws["t_host"]))
+        return float(sum(ws["t_kernel"]) + sum(ws["t_pcie_host"]))
 
     def print_reference_results(
         self, est_component_sample: dict[str, list[float]], flops: float, mem_bw: float, gpu: str
@@ -93,6 +96,7 @@ class SingleGpuProfiler(BaseProfiler):
         print(f"Estimated GPU Memory Bandwidth: {mem_bw:.2f} GB/s")
 
         print(f"\nEstimated Kernel Time: {sum(est_component_sample['t_kernel']) / 1000:.2f} s")
-        print(f"\nEstimated PCIe Time: {sum(est_component_sample['t_pcie']) / 1000:.2f} s")
-        print(f"Estimated Host Time: {sum(est_component_sample['t_host']) / 1000:.2f} s")
+        print(
+            f"\nEstimated PCIe and Host Time: {sum(est_component_sample['t_pcie_host']) / 1000:.2f} s"
+        )
         print(f"{'=' * 60}\n")
