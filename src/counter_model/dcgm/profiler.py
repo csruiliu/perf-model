@@ -33,7 +33,8 @@ class SingleGpuProfiler(BaseProfiler):
 
         results = {}
         results["t_kernel"] = []
-        results["t_pcie_host"] = []
+        results["t_kernel_pcie"] = []
+        results["t_host"] = []
 
         for row in profiled_df.itertuples(index=False):
             mv = MetricValues.from_row(row)
@@ -65,15 +66,17 @@ class SingleGpuProfiler(BaseProfiler):
             results["t_kernel"].append(time_frac_ref.t_kernel)
 
             if mv.gract > GPU_MIN_INTENSITY_THRESHOLD:
-                results["t_pcie_host"].append(max(time_frac_ref.t_pcie, time_frac_ref.t_host))
+                results["t_kernel_pcie"].append(max(time_frac_ref.t_kernel, time_frac_ref.t_pcie))
             else:
-                results["t_pcie_host"].append(time_frac_ref.t_pcie + time_frac_ref.t_host)
+                results["t_kernel_pcie"].append(time_frac_ref.t_kernel + time_frac_ref.t_pcie)
+
+            results["t_host"].append(time_frac_ref.t_host)
 
         time_window = self.time_slicer.get_time_window(
             args.overall_runtime_ms,
             args.start_timestamp,
             args.end_timestamp,
-            len(results["t_pcie_host"]),
+            len(results["t_host"]),
         )
 
         ws = time_window.extract_from_dict(results)
@@ -83,7 +86,7 @@ class SingleGpuProfiler(BaseProfiler):
         if is_printout:
             self.print_reference_results(ws, flops, membw, self.gpu.get_name())
 
-        return float(sum(ws["t_kernel"]) + sum(ws["t_pcie_host"]))
+        return float(sum(ws["t_kernel_pcie"]) + sum(ws["t_host"]))
 
     def print_reference_results(
         self, est_component_sample: dict[str, list[float]], flops: float, mem_bw: float, gpu: str
@@ -94,9 +97,9 @@ class SingleGpuProfiler(BaseProfiler):
         print(f"Reference Hardware: {gpu}\n")
         print(f"Estimated TFLOPS: {flops:.2f}")
         print(f"Estimated GPU Memory Bandwidth: {mem_bw:.2f} GB/s")
-
         print(f"\nEstimated Kernel Time: {sum(est_component_sample['t_kernel']) / 1000:.2f} s")
         print(
-            f"\nEstimated PCIe and Host Time: {sum(est_component_sample['t_pcie_host']) / 1000:.2f} s"
+            f"\nEstimated Kernel and PCIe Time: {sum(est_component_sample['t_kernel_pcie']) / 1000:.2f} s"
         )
+        print(f"\nEstimated Host Time: {sum(est_component_sample['t_host']) / 1000:.2f} s")
         print(f"{'=' * 60}\n")
