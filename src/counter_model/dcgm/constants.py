@@ -49,5 +49,8 @@ GPU_INTENSIVE_MIN_ACTIVE_VALUE = 0.5
 # governing min() in update_scale_kernel().
 GPU_MIN_INTENSITY_THRESHOLD = 0.01
 
+# The threshold to determine whether the kernel and pcie are overlapped or not
+KERNEL_PCIE_THRESHOLD = 0.5
+
 # SMOCC-level constants for estimation
 SMOCC_LEVELS = ["lower", "mid", "upper", "mock"]
