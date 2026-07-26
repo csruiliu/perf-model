@@ -1,7 +1,7 @@
 
+from counter_model.dcgm.constants import KERNEL_PCIE_THRESHOLD
 from counter_model.dcgm.data_classes import MetricValues, TimeFraction, TimeWindow
 from counter_model.hw_config.hw_specs import GPU
-from counter_model.dcgm.constants import KERNEL_PCIE_THRESHOLD
 
 
 class TimeSlicer:
@@ -18,7 +18,7 @@ class TimeSlicer:
             self.sample_intv_ms
             * (metrics.pcitx + metrics.pcirx)
             / (self.gpu.get_specs("pcie_bw") * 1e9)
-        )        
+        )
 
         if metrics.gract > KERNEL_PCIE_THRESHOLD:
             t_kernel_pcie = max(t_kernel, t_pcie)
