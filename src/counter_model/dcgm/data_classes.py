@@ -11,7 +11,8 @@ class TimeFraction:
 
     t_kernel: float = 0.0
     t_pcie: float = 0.0
-    t_host: float = 0.0
+    t_kernel_pcie: float = 0.0
+    t_residual: float = 0.0
     t_nvlink: float = 0.0
 
     def to_dict(self) -> dict[str, float]:
@@ -19,7 +20,8 @@ class TimeFraction:
         return {
             "t_kernel": self.t_kernel,
             "t_pcie": self.t_pcie,
-            "t_host": self.t_host,
+            "t_kernel_pcie": self.t_kernel_pcie,
+            "t_residual": self.t_residual,
             "t_nvlink": self.t_nvlink,
         }
 

@@ -1,5 +1,7 @@
+
 from counter_model.dcgm.data_classes import MetricValues, TimeFraction, TimeWindow
 from counter_model.hw_config.hw_specs import GPU
+from counter_model.dcgm.constants import KERNEL_PCIE_THRESHOLD
 
 
 class TimeSlicer:
@@ -16,10 +18,16 @@ class TimeSlicer:
             self.sample_intv_ms
             * (metrics.pcitx + metrics.pcirx)
             / (self.gpu.get_specs("pcie_bw") * 1e9)
-        )
-        t_host = max(self.sample_intv_ms - t_kernel - t_pcie, 0)
+        )        
 
-        return TimeFraction(t_kernel, t_pcie, t_host, t_nvlink=0)
+        if metrics.gract > KERNEL_PCIE_THRESHOLD:
+            t_kernel_pcie = max(t_kernel, t_pcie)
+        else:
+            t_kernel_pcie = t_kernel + t_pcie
+
+        t_residual = max(self.sample_intv_ms - t_kernel_pcie, 0)
+
+        return TimeFraction(t_kernel, t_pcie, t_kernel_pcie, t_residual, t_nvlink=0)
 
     def time_fraction_multi_gpu(self, metrics: MetricValues) -> TimeFraction:
         """Calculate time fraction from metrics for multi-gpu"""

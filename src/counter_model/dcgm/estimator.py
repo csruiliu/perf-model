@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 import numpy as np
 import pandas as pd
 
-from counter_model.dcgm.constants import GPU_MIN_INTENSITY_THRESHOLD, SMOCC_LEVELS
+from counter_model.dcgm.constants import KERNEL_PCIE_THRESHOLD, SMOCC_LEVELS
 from counter_model.dcgm.data_classes import MetricValues
 from counter_model.dcgm.scaler import GpuScaler, HostScaler, get_tf_weights
 from counter_model.dcgm.time_aggregator import TimeSlicer
@@ -66,7 +66,8 @@ class SingleGpuEstimator(BaseEstimator):
         results = {f"{component}_{key}": [] for component in time_results for key in SMOCC_LEVELS}
 
         # host and pcie time are not scaled by smocc
-        results["t_host"] = []
+        results["t_residual"] = []
+        results["t_pcie"] = []
 
         gpu_scaler = GpuScaler(self.ref_gpu, self.tgt_gpu, SMOCC_LEVELS)
         host_scaler = HostScaler(self.ref_host, self.tgt_host)
@@ -94,22 +95,25 @@ class SingleGpuEstimator(BaseEstimator):
             gpu_scaler.update_scale_kernel(mv_gract_norm, tf_weights)
 
             # Host time
-            t_host_tgt = time_frac_ref.t_host / host_scaler.host_scale(cores_alloc)
-            results["t_host"].append(t_host_tgt)
+            t_residual_tgt = time_frac_ref.t_residual / host_scaler.host_scale(cores_alloc)
+            results["t_residual"].append(t_residual_tgt)
 
             t_pcie_tgt = time_frac_ref.t_pcie / gpu_scaler.pcie_scale()
+            results["t_pcie"].append(t_pcie_tgt)
+
             # Process each SMOCC key
             for key in SMOCC_LEVELS:
                 # Calculate kernel and total time
                 t_kernel_tgt = time_frac_ref.t_kernel / gpu_scaler.scale_kernel.get(key)
-                if mv.gract > GPU_MIN_INTENSITY_THRESHOLD:
+
+                if mv.gract > KERNEL_PCIE_THRESHOLD:
                     t_kernel_pcie_tgt = max(t_kernel_tgt, t_pcie_tgt)
                 else:
                     t_kernel_pcie_tgt = t_kernel_tgt + t_pcie_tgt
 
                 results[f"t_kernel_{key}"].append(t_kernel_tgt)
                 results[f"t_kernel_pcie_{key}"].append(t_kernel_pcie_tgt)
-                results[f"t_total_{key}"].append(t_kernel_pcie_tgt + t_host_tgt)
+                results[f"t_total_{key}"].append(t_kernel_pcie_tgt + t_residual_tgt)
                 mem_bw_tgt = min(
                     self.ref_gpu.get_specs("mem_bw")
                     * mv_gract_norm["drama_gract"]
@@ -155,6 +159,9 @@ class SingleGpuEstimator(BaseEstimator):
         print(f"Estimated Memory Bandwidth [Upper SMOCC]: {mem_bw.get('dram_upper'):.2f} GB/s")
         print(f"Estimated Memory Bandwidth [Mock SMOCC]: {mem_bw.get('dram_mock'):.2f} GB/s")
 
+        print(f"\nEstimated PCIe Time: {sum(est_factor_samples['t_pcie']) / 1000:.2f} s")
+        print(f"\nEstimated Residual Time: {sum(est_factor_samples['t_residual']) / 1000:.2f} s")
+
         print(
             f"\nEstimated Kernel Time [Lower SMOCC]: {sum(est_factor_samples['t_kernel_lower']) / 1000:.2f} s"
         )
@@ -180,9 +187,7 @@ class SingleGpuEstimator(BaseEstimator):
         print(
             f"Estimated Kernel and PCIe Time [Mock SMOCC]: {sum(est_factor_samples['t_kernel_pcie_mock']) / 1000:.2f} s"
         )
-
-        print(f"\nEstimated Host Time: {sum(est_factor_samples['t_host']) / 1000:.2f} s")
-
+        
         print(
             f"\nEstimated Total Runtime [Lower SMOCC]: {sum(est_factor_samples['t_total_lower']) / 1000:.2f} s"
         )
