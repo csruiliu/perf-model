@@ -31,12 +31,8 @@ class HostScaler:
         self._precompute_common_ratios()
 
     def _precompute_common_ratios(self):
-        cpu_clock_ratio_ref = np.mean(
-            [self.ref_host.get_specs("cpu_clock_base"), self.ref_host.get_specs("cpu_clock_boost")]
-        )
-        cpu_clock_ratio_tgt = np.mean(
-            [self.tgt_host.get_specs("cpu_clock_base"), self.tgt_host.get_specs("cpu_clock_boost")]
-        )
+        cpu_clock_ratio_ref = self.ref_host.get_specs("cpu_clock_boost")
+        cpu_clock_ratio_tgt = self.tgt_host.get_specs("cpu_clock_boost")
         self.cpu_clock_ratio = cpu_clock_ratio_tgt / cpu_clock_ratio_ref
 
         # self.cpu_clock_ratio = self._get_ratio("cpu_clock_boost")
