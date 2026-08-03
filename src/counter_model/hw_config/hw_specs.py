@@ -30,15 +30,9 @@ GPUSpec = {
         "max_warps_sm": 48, "reg_size_sm": 256, "shmem_sm": 100, "num_sm": 84
     },
     "H100-SXM": {
-        "fp64": 34, "tf64": 67, "fp32": 67, "tf32": 495, "fp16": 267.6, "tf16": 990,
+        "fp64": 34, "tf64": 67, "fp32": 67, "tf32": 495, "fp16": 133.6, "tf16": 990,
         "mem_bw": 3350, "pcie_bw": 128, "nvlink_bw": 900, "l2_cache": 50,
         "base_clock": 1590, "boost_clock": 1980, "mem_clock": 1313,
-        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 132
-    },
-    "H200-SXM": {
-        "fp64": 34, "tf64": 67, "fp32": 67, "tf32": 495, "fp16": 267.6, "tf16": 990,
-        "mem_bw": 4890, "pcie_bw": 128, "nvlink_bw": 900, "l2_cache": 50,
-        "base_clock": 1590, "boost_clock": 1980, "mem_clock": 1593,
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 132
     },
     "BLACKWELL-ULTRA": {
