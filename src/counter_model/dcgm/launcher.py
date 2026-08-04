@@ -63,7 +63,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--agg_interval_ms", type=int, help="[Multi-GPU] Aggregation interval (ms)")
 
     # --- for multi jobs ---
-    parser.add_argument("--agg_results_dir", type=int, help="[Multi-GPU] Aggregated results output")
+    parser.add_argument("--agg_results_dir", type=str, help="[Multi-GPU] Aggregated results output")
     parser.add_argument("--max_workers", type=int, default=1)
 
     args = parser.parse_args()
