@@ -9,7 +9,7 @@ plt.rcParams["hatch.linewidth"] = 3  # default is 1.0
 # Category to exclude
 exclude = "A100-40G"
 
-milc_fp32_h100_ref_df = pd.read_csv("milc-fp32-h100-ref.csv")
+milc_fp32_h100_ref_df = pd.read_csv("lammps-fp32-h100-ref.csv")
 categories_csv = list(dict.fromkeys(milc_fp32_h100_ref_df["category"]))
 
 # Filter out the excluded category, preserving order
@@ -31,19 +31,12 @@ data = milc_fp32_h100_ref_data
 
 # 'measured' gets its own distinct color and no hatch.
 # All smocc bars share a similar color, distinguished by hatch.
-#colors = [
-#    "silver",  # measured (distinct)
-#    "grey",  # smocc_lower
-#    "gray",  # smocc_mid
-#    "dimgrey",  # smocc_upper
-#    "dimgray",
-#]  # mock_smocc
 colors = [
     "silver",  # measured (distinct)
-    "lightsalmon",  # smocc_lower
-    "salmon",  # smocc_mid
-    "tomato",  # smocc_upper
-    "red",
+    "mediumslateblue",  # smocc_lower
+    "mediumpurple",  # smocc_mid
+    "darkslateblue",  # smocc_upper
+    "indigo",
 ]  # mock_smocc
 hatches = [
     "",  # measured (no hatch)
@@ -115,4 +108,4 @@ for spine in ["top", "right", "bottom", "left"]:
     ax.spines[spine].set_linewidth(frame_linewidth)
 
 fig.tight_layout()
-plt.savefig("milc_fp32_ref_h100_reduce.png", dpi=300, bbox_inches="tight")
+plt.savefig("lammps_fp32_ref_h100_reduce.png", dpi=300, bbox_inches="tight")
