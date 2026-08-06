@@ -24,10 +24,10 @@ GPUSpec = {
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 164, "num_sm": 108
     },
     "A40": {
-        "fp64": 0.58, "tf64": 0, "fp32": 37.4, "tf32": 74.8, "fp16": 37.4, "tf16": 149.7,
+        "fp64": 0.58, "tf64": 0, "fp32": 37.4, "tf32": 74.8, "fp16": 37.4, "tf16": 150,
         "mem_bw": 696, "pcie_bw": 64, "nvlink_bw": 112.5, "l2_cache": 6,
         "base_clock": 1305, "boost_clock": 1740, "mem_clock": 1812,
-        "max_warps_sm": 48, "reg_size_sm": 256, "shmem_sm": 100, "num_sm": 84
+        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 96, "num_sm": 84
     },
     "H100-SXM": {
         "fp64": 34, "tf64": 67, "fp32": 67, "tf32": 495, "fp16": 133.6, "tf16": 990,
@@ -42,10 +42,10 @@ GPUSpec = {
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 148
     },
     "RTX8000": {
-        "fp64": 0.51, "tf64": 0, "fp32": 16.31, "tf32": 0, "fp16": 32.62, "tf16": 130.5,
+        "fp64": 0.51, "tf64": 0, "fp32": 16.3, "tf32": 0, "fp16": 32.6, "tf16": 130,
         "mem_bw": 672, "pcie_bw": 32, "nvlink_bw": 100, "l2_cache": 6,
         "base_clock": 1395, "boost_clock": 1770, "mem_clock": 1750,
-        "max_warps_sm": 32, "reg_size_sm": 256, "shmem_sm": 96, "num_sm": 72
+        "max_warps_sm": 32, "reg_size_sm": 256, "shmem_sm": 64, "num_sm": 72
     },
     "V100-SXM2": {
         "fp64": 7.8, "tf64": 0, "fp32": 15.7, "tf32": 0, "fp16": 31.3, "tf16": 125,
