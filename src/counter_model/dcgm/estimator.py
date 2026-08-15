@@ -187,7 +187,7 @@ class SingleGpuEstimator(BaseEstimator):
         print(
             f"Estimated Kernel and PCIe Time [Mock SMOCC]: {sum(est_factor_samples['t_kernel_pcie_mock']) / 1000:.2f} s"
         )
-        
+
         print(
             f"\nEstimated Total Runtime [Lower SMOCC]: {sum(est_factor_samples['t_total_lower']) / 1000:.2f} s"
         )
