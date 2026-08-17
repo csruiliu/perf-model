@@ -7,8 +7,8 @@ We evaluate the model via various benchmarking applications including GEMM, Babl
 ## Installation
 
 ```bash
-git clone https://github.com/username/project.git
-cd project
+git clone git@github.com:csruiliu/perf-model.git
+cd perf_model
 # better to be in a virtual environment
 pip install -e .
 ```
@@ -22,7 +22,7 @@ One exmaple to quickly run the DCGM-based model using the collected counters of 
 python3 -m counter_model.dcgm.launcher \
     -job_mode single \
     --num_gpu 1 \
-    --dcgm_input ./eval/dcgm/bgw/pm/results/interval_1s/EPS_SMALL_FP64_55365897/dcgm.d1000.55365897.0-0.out \
+    --dcgm_input <dcgm_out_file> \
     -d 1000 \
     -o 932000 \
     -rg A100-40 \
@@ -38,7 +38,7 @@ One exmaple to quickly run the CXI-based model using the collected counters of L
 ```bash
 # in the root folder
 python3 -m counter_model.cxi.modeling_cxi \
-    --counter_dir=./eval/lammps/results/LPS_SMALL_FP32_CTR_51907293 \
+    --counter_dir=<counter_file_folder> \
     --msg_set fine \
     -rh Perlmutter
 ```
