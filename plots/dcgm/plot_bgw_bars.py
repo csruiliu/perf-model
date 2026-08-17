@@ -18,7 +18,15 @@ import pandas as pd
 # --------------------------------------------------------------------------- #
 plt.rcParams.update({"hatch.linewidth": 3, "axes.linewidth": 2, "font.size": 20})
 
-SERIES = ("Measurement", "SMOCC Lower", "SMOCC Mid", "SMOCC Upper", "SMOCC Mock")
+# Labels which should match csv column names in order
+SERIES = (
+    "Measurement",
+    r"$\Theta_{\mathrm{min}}$",
+    r"$\Theta_{\mathrm{mid}}$",
+    r"$\Theta_{\mathrm{max}}$",
+    r"$\Theta_{\mathrm{mock}}$",
+)
+
 HATCHES = ("", "//", "\\\\", "xx", "O")
 
 PALETTES = {
@@ -145,7 +153,7 @@ FIGURES = (
     {
         "out_name": "bgw_eps_fp64_bars",
         "palette": "eps",
-        "headroom": 1.5,
+        "headroom": 1.6,
         "sources": {
             "H100-SXM": "bgw-eps-fp64-h100-ref.csv",
             "A100-40GB": "bgw-eps-fp64-a100-ref.csv",
@@ -154,7 +162,7 @@ FIGURES = (
     {
         "out_name": "bgw_sig_fp64_bars",
         "palette": "sig",
-        "headroom": 1.5,
+        "headroom": 1.6,
         "sources": {
             "H100-SXM": "bgw-sig-fp64-h100-ref.csv",
             "A100-40GB": "bgw-sig-fp64-a100-ref.csv",
