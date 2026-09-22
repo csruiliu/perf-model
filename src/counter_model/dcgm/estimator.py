@@ -1,13 +1,14 @@
 import argparse
+import math
 from abc import ABC, abstractmethod
 
 import numpy as np
 import pandas as pd
 
-from counter_model.dcgm.constants import KERNEL_PCIE_THRESHOLD, SMOCC_LEVELS
+from counter_model.dcgm.constants import SMOCC_LEVELS
 from counter_model.dcgm.data_classes import MetricValues
 from counter_model.dcgm.scaler import GpuScaler, HostScaler, get_tf_weights
-from counter_model.dcgm.time_aggregator import TimeSlicer
+from counter_model.dcgm.time_aggregator import TimeAggregator
 from counter_model.hw_config.hw_specs import GPU, Host
 
 
@@ -15,7 +16,7 @@ class BaseEstimator(ABC):
     """Abstract base class for profilers"""
 
     def __init__(self, sample_interval_ms: float, ref_gpu: GPU):
-        self.time_slicer = TimeSlicer(sample_interval_ms, ref_gpu)
+        self.time_aggregator = TimeAggregator(sample_interval_ms, ref_gpu)
 
     @abstractmethod
     def run(self, *args, **kwargs):
@@ -39,7 +40,7 @@ class SingleGpuEstimator(BaseEstimator):
         target_metrics = self._scale_metrics(dcgm_df, args.cores_alloc)
 
         # Get time slice
-        time_window = self.time_slicer.get_time_window(
+        time_window = self.time_aggregator.get_time_window(
             args.overall_runtime_ms,
             args.start_timestamp,
             args.end_timestamp,
@@ -88,7 +89,7 @@ class SingleGpuEstimator(BaseEstimator):
             tf_ref = sum(tf_weights[p] * self.ref_gpu.get_specs(p) for p in tf_precisions)
 
             # Calculate time fraction on ref gpu
-            time_frac_ref = self.time_slicer.time_fraction_single_gpu(mv)
+            time_frac_ref = self.time_aggregator.time_fraction_single_gpu_ref(mv)
 
             # Update SMOCC and calculate all scales
             gpu_scaler.update_smocc(mv_gract_norm["smocc_gract"])
@@ -105,15 +106,12 @@ class SingleGpuEstimator(BaseEstimator):
             for key in SMOCC_LEVELS:
                 # Calculate kernel and total time
                 t_kernel_tgt = time_frac_ref.t_kernel / gpu_scaler.scale_kernel.get(key)
-
-                if mv.gract > KERNEL_PCIE_THRESHOLD:
-                    t_kernel_pcie_tgt = max(t_kernel_tgt, t_pcie_tgt)
-                else:
-                    t_kernel_pcie_tgt = t_kernel_tgt + t_pcie_tgt
+                t_intv_tgt = self._solve_quadratic(
+                    1.0, -(t_kernel_tgt + t_pcie_tgt + t_residual_tgt), t_kernel_tgt * t_pcie_tgt
+                )
 
                 results[f"t_kernel_{key}"].append(t_kernel_tgt)
-                results[f"t_kernel_pcie_{key}"].append(t_kernel_pcie_tgt)
-                results[f"t_total_{key}"].append(t_kernel_pcie_tgt + t_residual_tgt)
+                results[f"t_total_{key}"].append(t_intv_tgt)
                 mem_bw_tgt = min(
                     self.ref_gpu.get_specs("mem_bw")
                     * mv_gract_norm["drama_gract"]
@@ -137,6 +135,37 @@ class SingleGpuEstimator(BaseEstimator):
             f"{prefix}_{key}": np.mean(est_factor_samples[f"{prefix}_{key}"])
             for key in SMOCC_LEVELS
         }
+
+    def _solve_quadratic(self, a, b, c):
+        """Solve the quadratic formula and return the only or larger root"""
+        a, b, c = float(a), float(b), float(c)
+
+        if a == 0.0:
+            raise ValueError("not quadratic: a must be nonzero")
+
+        # Exact power-of-two rescaling: keeps b*b and 4*a*c from overflowing
+        # or underflowing without perturbing the roots at all.
+        _, exp = math.frexp(max(abs(a), abs(b), abs(c)))
+        a = math.ldexp(a, -exp)
+        b = math.ldexp(b, -exp)
+        c = math.ldexp(c, -exp)
+
+        try:
+            disc = math.fma(b, b, -4.0 * a * c)  # single rounding, Python 3.13+
+        except AttributeError:
+            disc = b * b - 4.0 * a * c
+
+        # A mathematically zero discriminant can round slightly negative.
+        disc = max(disc, 0.0)
+
+        q = -0.5 * (b + math.copysign(math.sqrt(disc), b))
+        if q == 0.0:  # only when b == c == 0
+            return 0.0
+
+        # the product of the roots of ax² + bx + c is c/a
+        # Having q/a as one root, the other is (c/a) / (q/a) = c/q
+        # And we also return the larger root
+        return max(q / a, c / q)
 
     def print_target_results(
         self,

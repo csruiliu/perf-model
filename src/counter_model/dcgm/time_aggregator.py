@@ -1,17 +1,15 @@
-
-from counter_model.dcgm.constants import KERNEL_PCIE_THRESHOLD
 from counter_model.dcgm.data_classes import MetricValues, TimeFraction, TimeWindow
 from counter_model.hw_config.hw_specs import GPU
 
 
-class TimeSlicer:
+class TimeAggregator:
     """Handles time-related calculations"""
 
     def __init__(self, sample_interval_ms: float, ref_gpu: GPU):
         self.sample_intv_ms = sample_interval_ms
         self.gpu = ref_gpu
 
-    def time_fraction_single_gpu(self, metrics: MetricValues) -> TimeFraction:
+    def time_fraction_single_gpu_ref(self, metrics: MetricValues) -> TimeFraction:
         """Calculate time fraction from metrics for single gpu"""
         t_kernel = self.sample_intv_ms * metrics.gract
         t_pcie = (
@@ -20,12 +18,9 @@ class TimeSlicer:
             / (self.gpu.get_specs("pcie_bw") * 1e9)
         )
 
-        if metrics.gract > KERNEL_PCIE_THRESHOLD:
-            t_kernel_pcie = max(t_kernel, t_pcie)
-        else:
-            t_kernel_pcie = t_kernel + t_pcie
+        t_kernel_pcie = t_kernel * t_pcie / self.sample_intv_ms
 
-        t_residual = max(self.sample_intv_ms - t_kernel_pcie, 0)
+        t_residual = max(self.sample_intv_ms - t_kernel - t_pcie + t_kernel_pcie, 0)
 
         return TimeFraction(t_kernel, t_pcie, t_kernel_pcie, t_residual, t_nvlink=0)
 

@@ -5,7 +5,7 @@ import pandas as pd
 
 from counter_model.dcgm.data_classes import MetricValues
 from counter_model.dcgm.scaler import get_tf_weights
-from counter_model.dcgm.time_aggregator import TimeSlicer
+from counter_model.dcgm.time_aggregator import TimeAggregator
 from counter_model.hw_config.hw_specs import GPU
 
 
@@ -14,7 +14,7 @@ class BaseProfiler(ABC):
 
     def __init__(self, sample_interval_ms: float, gpu_name: str):
         self.gpu = GPU(gpu_name=gpu_name)
-        self.time_slicer = TimeSlicer(sample_interval_ms, self.gpu)
+        self.time_aggregator = TimeAggregator(sample_interval_ms, self.gpu)
 
     @abstractmethod
     def run(self, *args, **kwargs):
@@ -62,13 +62,13 @@ class SingleGpuProfiler(BaseProfiler):
             dram_sum += mv_gract_norm["drama_gract"] * self.gpu.get_specs("mem_bw")
 
             # Calculate time fraction on ref gpu
-            time_frac_ref = self.time_slicer.time_fraction_single_gpu(mv)
+            time_frac_ref = self.time_aggregator.time_fraction_single_gpu_ref(mv)
             results["t_kernel"].append(time_frac_ref.t_kernel)
             results["t_pcie"].append(time_frac_ref.t_pcie)
             results["t_kernel_pcie"].append(time_frac_ref.t_kernel_pcie)
             results["t_residual"].append(time_frac_ref.t_residual)
 
-        time_window = self.time_slicer.get_time_window(
+        time_window = self.time_aggregator.get_time_window(
             args.overall_runtime_ms,
             args.start_timestamp,
             args.end_timestamp,
