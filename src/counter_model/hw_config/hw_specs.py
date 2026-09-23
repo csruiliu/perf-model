@@ -51,14 +51,14 @@ GPUSpec = {
     # NG-2 = Non-GPU portion 2x
     "H100-SXM-NG2": {
         "fp64": 34, "tf64": 67, "fp32": 67, "tf32": 495, "fp16": 133.6, "tf16": 990,
-        "mem_bw": 3350, "pcie_bw": 256, "nvlink_bw": 900, "l2_cache": 50,
+        "mem_bw": 3350, "pcie_bw": 128, "nvlink_bw": 900, "l2_cache": 50,
         "base_clock": 1590, "boost_clock": 1980, "mem_clock": 1313,
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 132
     },
     # NG-4 = Non-GPU portion 4x
     "BLACKWELL-ULTRA-NG4": {
         "fp64": 1.2, "tf64": 1.2, "fp32": 75, "tf32": 1100, "fp16": 2200, "tf16": 2200,
-        "mem_bw": 7700, "pcie_bw": 1024, "nvlink_bw": 1800, "l2_cache": 192,
+        "mem_bw": 7700, "pcie_bw": 512, "nvlink_bw": 1800, "l2_cache": 192,
         "base_clock": 1665, "boost_clock": 2032, "mem_clock": 3996,
         "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 228, "num_sm": 148
     },
