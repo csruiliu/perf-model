@@ -33,7 +33,7 @@ def load_parquet_folder(input_dir, max_node_hours=100):
 
     # Filter out rows with node_hours over the threshold.
     before = len(combined)
-    combined = combined[combined["node_hours"] <= max_node_hours]
+    combined = combined[combined["node_hours"].between(0, max_node_hours, inclusive="right")]
     dropped = before - len(combined)
     if dropped:
         print(f"Filtered out {dropped} row(s) with node_hours > {max_node_hours}.")
