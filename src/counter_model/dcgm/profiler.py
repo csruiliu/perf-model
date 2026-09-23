@@ -82,7 +82,12 @@ class SingleGpuProfiler(BaseProfiler):
         if is_printout:
             self.print_reference_results(ws, flops, membw, self.gpu.get_name())
 
-        return float(sum(ws["t_kernel_pcie"]) + sum(ws["t_residual"]))
+        return float(
+            sum(ws["t_kernel"])
+            + sum(ws["t_pcie"])
+            - sum(ws["t_kernel_pcie"])
+            + sum(ws["t_residual"])
+        )
 
     def print_reference_results(
         self, est_component_sample: dict[str, list[float]], flops: float, mem_bw: float, gpu: str
