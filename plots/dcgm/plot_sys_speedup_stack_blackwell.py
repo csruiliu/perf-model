@@ -3,8 +3,67 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+from matplotlib.transforms import blended_transform_factory
 import numpy as np
 import pandas as pd
+
+
+# ---------------------------------------------------------------------------
+# Naive spec-ratio baselines (no DCGM counters)
+# ---------------------------------------------------------------------------
+# Peak rates from Tables II and V (dense; TFLOPS, GB/s).
+SPECS = {
+    "A100-40GB": dict(tf64=19.5, tf32=156,  tf16=312,  fp64=9.7, fp32=19.5, fp16=78,
+                      dram=1555, pcie=32),
+    "H100":      dict(tf64=67,   tf32=495,  tf16=990,  fp64=34,  fp32=67,   fp16=133.6,
+                      dram=3350, pcie=64),
+    # NOTE: B300 vector fp16 (2200) equals TF16 in Table V; please verify.
+    # It enters the geometric-mean baseline (28x ratio).
+    "B300":      dict(tf64=1.2,  tf32=1100, tf16=2200, fp64=1.2, fp32=75,   fp16=2200,
+                      dram=7700, pcie=128),
+}
+
+BASELINE_REF = "A100-40GB"
+BASELINE_TGT = "B300"
+
+# Distinct colors AND line styles, so the lines stay readable in grayscale.
+BASELINE_STYLES = {
+    "Mem. BW":   dict(color="navy",      linestyle=(0, (6, 3))),
+    "FP64":      dict(color="firebrick", linestyle=(0, (1.5, 1.5))),
+    "Geo. mean": dict(color="darkgreen", linestyle=(0, (6, 2, 1.5, 2))),
+}
+BASELINE_LW = 2.5
+
+
+def spec_ratio_baselines(ref, tgt):
+    """Return [(name, speedup)] for the three naive spec-ratio baselines."""
+    r = {k: SPECS[tgt][k] / SPECS[ref][k] for k in SPECS[ref]}
+    geo = float(np.exp(np.mean(np.log(list(r.values())))))
+    return [("Mem. BW", r["dram"]), ("FP64", r["fp64"]), ("Geo. mean", geo)]
+
+
+def _draw_baselines(ax, baselines, xlim, show_label):
+    """Vertical spec-ratio lines on one panel.
+
+    Lines beyond the x-range still get a legend entry (the clipped artist
+    exists) and are marked with an arrow at the panel edge.
+    """
+    offaxis = 0
+    for name, value in baselines:
+        style = BASELINE_STYLES[name]
+        label = f"Spec ratio: {name} ({value:.2f}\u00d7)" if show_label else "_nolegend_"
+        ax.axvline(value, linewidth=BASELINE_LW, zorder=3, label=label, **style)
+        if not (xlim[0] <= value <= xlim[1]):
+            right = value > xlim[1]
+            ax.text(
+                0.995 if right else 0.005, 0.92 - 0.10 * offaxis,
+                (f"{name} {value:.2f}\u00d7 \u2192" if right
+                 else f"\u2190 {name} {value:.2f}\u00d7"),
+                transform=ax.transAxes, ha="right" if right else "left",
+                va="top", fontsize=15, color=style["color"], zorder=21,
+                bbox=dict(facecolor="white", edgecolor="none", pad=1.5),
+            )
+            offaxis += 1
 
 
 def load_parquet_folder(input_dir, max_node_hours=100):
@@ -84,14 +143,23 @@ def _draw_panel(
     denom,
     show_xlabel,
     legend_label=None,
+    baselines=None,
+    xlim=None,
+    baseline_legend=True,
+    legend_anchor=None,
+    legend_fontsize=16,
 ):
     """Draw a single speedup histogram + cumulative % panel onto `ax`.
 
     `denom` is the node-hour total used for normalization; pass the *same*
     value for both panels when the two panels describe the same job set, so
     the bar heights are directly comparable.
+    `baselines` is an optional [(name, speedup)] list of spec-ratio lines.
+    `legend_anchor` = (x, y) puts the legend's upper-right corner at speedup x
+    and axes-fraction height y; None keeps the original upper-left placement.
 
-    Returns (ax2, counts) so the caller can align axes and autoscale.
+    Returns (ax2, counts, bin_edges, leg, cum_line) so the caller can autoscale
+    and check the legend placement.
     """
     df = result_df[["speedup", "node_hours"]].dropna()
     if df.empty:
@@ -128,6 +196,10 @@ def _draw_panel(
         linewidth=2,
     )
 
+    # Baselines are drawn after the histogram so the legend lists it first.
+    if baselines:
+        _draw_baselines(ax, baselines, xlim, show_label=baseline_legend)
+
     # Sanity check: warn if data falls outside the bin range, in which case
     # the bars will not sum to 1 (or 100%).
     in_range = (s >= bin_edges[0]) & (s <= bin_edges[-1])
@@ -146,7 +218,7 @@ def _draw_panel(
 
     order = np.argsort(s)
     cum = 100.0 * np.cumsum(node_hours[order]) / total
-    ax2.plot(
+    (cum_line,) = ax2.plot(
         s[order],
         cum,
         linestyle=(0, (5, 1)),
@@ -166,16 +238,18 @@ def _draw_panel(
     ax2.tick_params(which="both", direction="in", labelsize=23)
 
     handles, labels = ax.get_legend_handles_labels()
-    leg = ax2.legend(
-        handles,
-        labels,
-        loc="upper left",
-        fontsize=18,
-        frameon=True,
-        framealpha=1.0,
-        edgecolor="black",
-        facecolor="white",
-    )
+    leg_kw = dict(frameon=True, framealpha=1.0, edgecolor="black", facecolor="white")
+    if legend_anchor is None:
+        leg = ax2.legend(handles, labels, loc="upper left", fontsize=18, **leg_kw)
+    else:
+        # x in speedup units, y in axes fraction (independent of y_mode).
+        leg = ax2.legend(
+            handles, labels, loc="upper right", fontsize=legend_fontsize,
+            handlelength=1.6, borderpad=0.4, labelspacing=0.4,
+            bbox_to_anchor=legend_anchor,
+            bbox_transform=blended_transform_factory(ax.transData, ax.transAxes),
+            **leg_kw,
+        )
     leg.set_zorder(20)
 
     # Keep ax transparent so the twin axis (ax2) content shows through.
@@ -186,7 +260,40 @@ def _draw_panel(
     for spine in ["top", "right", "bottom", "left"]:
         ax.spines[spine].set_linewidth(frame_linewidth)
 
-    return ax2, counts
+    return ax2, counts, bin_edges, leg, cum_line
+
+
+def _default_legend_x(xlim, baselines, gap=0.07):
+    """Right edge for the legend: just left of a baseline line that sits near
+    the right edge of the axis (so the legend never covers it), else the edge."""
+    span = xlim[1] - xlim[0]
+    near = [v for _, v in (baselines or []) if xlim[1] - 0.25 * span < v <= xlim[1]]
+    return (min(near) - gap) if near else (xlim[1] - 0.02 * span)
+
+
+def _check_legend_overlap(name, fig, ax, leg, counts, bin_edges, cum_line, baselines):
+    """Warn if the legend box covers bars, a baseline line or the cumulative curve."""
+    fig.canvas.draw()
+    bb = leg.get_window_extent(fig.canvas.get_renderer())
+    (x0, y0), (x1, y1) = ax.transData.inverted().transform([[bb.x0, bb.y0], [bb.x1, bb.y1]])
+    problems = []
+    lefts, rights = bin_edges[:-1], bin_edges[1:]
+    covered = (rights > x0) & (lefts < x1) & (counts > y0)
+    if covered.any():
+        problems.append(f"{covered.sum()} histogram bar(s)")
+    hit = [n for n, v in (baselines or []) if x0 <= v <= x1]
+    if hit:
+        problems.append("baseline line(s): " + ", ".join(hit))
+    pts = cum_line.get_transform().transform(cum_line.get_xydata())
+    inside = ((pts[:, 0] > bb.x0) & (pts[:, 0] < bb.x1) & (pts[:, 1] > bb.y0) & (pts[:, 1] < bb.y1))
+    if inside.any():
+        problems.append("the cumulative curve")
+    if problems:
+        print(f"Warning ({name}): legend overlaps " + "; ".join(problems)
+              + ". Adjust --top/--bottom-legend-anchor or --legend-fontsize.")
+    else:
+        print(f"{name}: legend placement clear "
+              f"(x {x0:.2f}-{x1:.2f}, y {y0:.2f}-{y1:.2f} on the left axis).")
 
 
 def plot_speedup_distribution_stacked(
@@ -196,8 +303,36 @@ def plot_speedup_distribution_stacked(
     bins,
     y_mode="percent",
     shared_denominator=True,
+    xlim=(-0.1, 4.1),
+    xtick_step=0.2,
+    baselines=None,
+    baseline_offaxis="extend",
+    legend_right=True,
+    top_legend_anchor=None,
+    bottom_legend_anchor=None,
+    legend_fontsize=16,
 ):
     """Two stacked panels sharing the x-axis, no vertical gap between them."""
+    # Widen the x-range so every baseline line is visible ("extend"), or keep
+    # it and mark off-axis lines with an arrow at the edge ("arrow").
+    if baselines and baseline_offaxis == "extend":
+        vmax = max(v for _, v in baselines)
+        if vmax > xlim[1]:
+            new_hi = np.ceil(vmax / xtick_step - 1e-9) * xtick_step + 0.1
+            print(f"Extending x-axis upper limit from {xlim[1]} to {new_hi:.2f} "
+                  f"to show the {vmax:.2f}x baseline.")
+            xlim = (xlim[0], float(new_hi))
+
+    # Legends go into the empty space on the right: upper-right corner just
+    # left of the rightmost baseline line and just below the cumulative
+    # curve's 100% plateau (100/110 of the right axis = 0.909).
+    if legend_right:
+        x_right = _default_legend_x(xlim, baselines)
+        top_anchor = tuple(top_legend_anchor) if top_legend_anchor else (x_right, 0.87)
+        bot_anchor = tuple(bottom_legend_anchor) if bottom_legend_anchor else (x_right, 0.87)
+    else:
+        top_anchor = bot_anchor = None
+
     fig, (ax_top, ax_bot) = plt.subplots(
         2, 1, figsize=(14, 10), sharex=True, gridspec_kw={"hspace": 0.0}
     )
@@ -220,7 +355,9 @@ def plot_speedup_distribution_stacked(
     else:
         denom_top, denom_bot = top_total, bot_total
 
-    _, counts_top = _draw_panel(
+    # The spec-ratio baseline has no non-GPU term, so the same lines appear in
+    # both panels; their legend entries are shown in the top panel only.
+    _, counts_top, edges_top, leg_top, cum_top = _draw_panel(
         ax_top,
         top_df,
         gpu_name="Blackwell-Ultra",
@@ -230,9 +367,14 @@ def plot_speedup_distribution_stacked(
         y_mode=y_mode,
         denom=denom_top,
         show_xlabel=False,
+        baselines=baselines,
+        xlim=xlim,
+        baseline_legend=True,
+        legend_anchor=top_anchor,
+        legend_fontsize=legend_fontsize,
     )
 
-    _, counts_bot = _draw_panel(
+    _, counts_bot, edges_bot, leg_bot, cum_bot = _draw_panel(
         ax_bot,
         bottom_df,
         gpu_name="Blackwell-Ultra-NG4",
@@ -242,10 +384,26 @@ def plot_speedup_distribution_stacked(
         y_mode=y_mode,
         denom=denom_bot,
         show_xlabel=True,
-        legend_label="Hypothetical-Blackwell-Ultra\n(Non-GPU Portion Scale Up 4x)",
+        # Wrapped onto four lines so the legend fits the narrow right-hand gap.
+        legend_label=("Hypothetical-Blackwell-Ultra\n(Non-GPU Portion Scale Up 4x)"),
+        baselines=baselines,
+        xlim=xlim,
+        baseline_legend=False,
+        legend_anchor=bot_anchor,
+        legend_fontsize=legend_fontsize,
     )
 
     ymax_data = max(counts_top.max(), counts_bot.max())
+
+    # Keep at most ~21 labelled ticks (as in the original 0-4 axis); on a wider
+    # axis, label every other tick and keep the rest as unlabelled minor ticks.
+    xticks_minor = np.round(
+        np.arange(np.ceil(xlim[0] / xtick_step - 1e-9) * xtick_step,
+                  xlim[1] + 1e-9, xtick_step), 10)
+    label_step = xtick_step * int(np.ceil(len(xticks_minor) / 21))
+    xticks = np.round(
+        np.arange(np.ceil(xlim[0] / label_step - 1e-9) * label_step,
+                  xlim[1] + 1e-9, label_step), 10)
 
     for ax in (ax_top, ax_bot):
         # Round the top of the axis up to a "nice" number with ~15% headroom
@@ -260,11 +418,20 @@ def plot_speedup_distribution_stacked(
         elif y_mode == "fraction":
             ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1, decimals=0))
 
-        ax.set_xlim(-0.1, 4.1)
-        ax.set_xticks(np.arange(0, 4 + 0.01, 0.2))
+        ax.set_xlim(*xlim)
+        ax.set_xticks(xticks)
+        if label_step > xtick_step:
+            ax.set_xticks(xticks_minor, minor=True)
+            ax.tick_params(axis="x", which="minor", length=3, width=1.5)
 
         ax.tick_params(axis="x", length=4.5, width=2)
         ax.tick_params(which="both", direction="in", labelsize=19)
+
+    if legend_right:
+        _check_legend_overlap("top panel", fig, ax_top, leg_top, counts_top,
+                              edges_top, cum_top, baselines)
+        _check_legend_overlap("bottom panel", fig, ax_bot, leg_bot, counts_bot,
+                              edges_bot, cum_bot, baselines)
 
     fig.savefig(outpath, dpi=300, format="png", bbox_inches="tight")
     plt.close(fig)
@@ -307,6 +474,34 @@ def parse_args():
         default=720,
         help="Filter out rows with node_hours greater than this value (default: 720).",
     )
+    parser.add_argument(
+        "--xlim", type=float, nargs=2, default=(-0.1, 4.1), metavar=("XMIN", "XMAX"),
+        help="Speedup range shown on the x-axis (default: -0.1 4.1).",
+    )
+    parser.add_argument("--no-baselines", dest="baselines", action="store_false",
+                        help="Do not draw the spec-ratio baseline lines.")
+    parser.add_argument(
+        "--baseline-offaxis", choices=("extend", "arrow"), default="extend",
+        help="For baseline lines beyond --xlim: widen the x-axis to show them "
+        "('extend', default) or keep the x-axis and mark them with an arrow "
+        "at the panel edge ('arrow').",
+    )
+    parser.add_argument(
+        "--legend-left", dest="legend_right", action="store_false",
+        help="Keep the original upper-left legends instead of moving them right.",
+    )
+    parser.add_argument(
+        "--top-legend-anchor", type=float, nargs=2, metavar=("X", "Y"), default=None,
+        help="Upper-right corner of the top legend: X in speedup units, Y as a "
+        "fraction of the panel height (default: auto, just left of the "
+        "rightmost baseline line, Y=0.87).",
+    )
+    parser.add_argument(
+        "--bottom-legend-anchor", type=float, nargs=2, metavar=("X", "Y"), default=None,
+        help="Upper-right corner of the bottom legend (same units as above).",
+    )
+    parser.add_argument("--legend-fontsize", type=float, default=16,
+                        help="Legend font size when legends are on the right (default: 16).")
     return parser.parse_args()
 
 
@@ -316,6 +511,12 @@ def main():
     top_df = load_parquet_folder(args.top_input_dir, max_node_hours=args.max_node_hours)
     bottom_df = load_parquet_folder(args.bottom_input_dir, max_node_hours=args.max_node_hours)
 
+    baselines = None
+    if args.baselines:
+        baselines = spec_ratio_baselines(BASELINE_REF, BASELINE_TGT)
+        for name, v in baselines:
+            print(f"Baseline {BASELINE_REF} -> {BASELINE_TGT}, {name}: {v:.3f}x")
+
     plot_speedup_distribution_stacked(
         top_df=top_df,
         bottom_df=bottom_df,
@@ -323,6 +524,13 @@ def main():
         bins=np.arange(0, 4.1, 0.05),
         y_mode=args.y_mode,
         shared_denominator=args.shared_denominator,
+        xlim=tuple(args.xlim),
+        baselines=baselines,
+        baseline_offaxis=args.baseline_offaxis,
+        legend_right=args.legend_right,
+        top_legend_anchor=args.top_legend_anchor,
+        bottom_legend_anchor=args.bottom_legend_anchor,
+        legend_fontsize=args.legend_fontsize,
     )
     print(f"Plot saved to {args.outpath}")
 

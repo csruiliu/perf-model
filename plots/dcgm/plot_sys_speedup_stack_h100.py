@@ -12,6 +12,63 @@ plt.rcParams['axes.formatter.limits'] = (-100, 100)
 FRAME_LW = 2
 CUM_COLOR = "mediumorchid"
 
+# ---------------------------------------------------------------------------
+# Naive spec-ratio baselines (no DCGM counters)
+# ---------------------------------------------------------------------------
+# Peak rates from Tables II and V (dense; TFLOPS, GB/s).
+SPECS = {
+    "A100-40GB": dict(tf64=19.5, tf32=156,  tf16=312,  fp64=9.7, fp32=19.5, fp16=78,
+                      dram=1555, pcie=32),
+    "H100":      dict(tf64=67,   tf32=495,  tf16=990,  fp64=34,  fp32=67,   fp16=133.6,
+                      dram=3350, pcie=64),
+    # NOTE: B300 vector fp16 (2200) equals TF16 in Table V; please verify.
+    "B300":      dict(tf64=1.2,  tf32=1100, tf16=2200, fp64=1.2, fp32=75,   fp16=2200,
+                      dram=7700, pcie=128),
+}
+
+BASELINE_REF = "A100-40GB"
+BASELINE_TGT = "H100"
+
+# Distinct colors AND line styles, so the lines stay readable in grayscale.
+BASELINE_STYLES = {
+    "Mem. BW":   dict(color="navy",      linestyle=(0, (6, 3))),
+    "FP64":      dict(color="firebrick", linestyle=(0, (1.5, 1.5))),
+    "Geo. mean": dict(color="darkgreen", linestyle=(0, (6, 2, 1.5, 2))),
+}
+BASELINE_LW = 2.5
+
+
+def spec_ratio_baselines(ref, tgt):
+    """Return [(name, speedup)] for the three naive spec-ratio baselines."""
+    r = {k: SPECS[tgt][k] / SPECS[ref][k] for k in SPECS[ref]}
+    geo = float(np.exp(np.mean(np.log(list(r.values())))))
+    return [("Mem. BW", r["dram"]), ("FP64", r["fp64"]), ("Geo. mean", geo)]
+
+
+def _draw_baselines(ax_hi, ax_lo, baselines, xlim, show_label):
+    """Vertical spec-ratio lines through both y-segments of one panel.
+
+    Lines beyond the x-range still get a legend entry (the clipped artist
+    exists) and are marked with an arrow at the panel edge.
+    """
+    offaxis = 0
+    for name, value in baselines:
+        style = BASELINE_STYLES[name]
+        label = f"Spec Scale: {name} ({value:.2f}\u00d7)" if show_label else "_nolegend_"
+        ax_lo.axvline(value, linewidth=BASELINE_LW, zorder=3, label=label, **style)
+        ax_hi.axvline(value, linewidth=BASELINE_LW, zorder=3, **style)
+        if not (xlim[0] <= value <= xlim[1]):
+            right = value > xlim[1]
+            ax_lo.text(
+                0.995 if right else 0.005, 0.92 - 0.14 * offaxis,
+                (f"{name} {value:.2f}\u00d7 \u2192" if right
+                 else f"\u2190 {name} {value:.2f}\u00d7"),
+                transform=ax_lo.transAxes, ha="right" if right else "left",
+                va="top", fontsize=15, color=style["color"], zorder=21,
+                bbox=dict(facecolor="white", edgecolor="none", pad=1.5),
+            )
+            offaxis += 1
+
 
 def load_parquet_folder(input_dir, max_node_hours=100):
     """Read and concatenate all parquet files (job_id-indexed) in a folder."""
@@ -188,12 +245,14 @@ def _center_left_label(fig, ax_hi, ax_lo, text, fontsize):
 # ---------------------------------------------------------------------------
 def _draw_panel(
     ax_hi, ax_lo, ax_cum, result_df, gpu_name, color, edgecolor, bins,
-    y_mode, denom, legend_label=None,
+    y_mode, denom, legend_label=None, baselines=None, xlim=None,
+    baseline_legend=True,
 ):
     """Draw one speedup histogram (in both y-segments) + cumulative % curve.
 
     `denom` is the node-hour total used for normalization; pass the same value
     for both panels when they describe the same job set.
+    `baselines` is an optional [(name, speedup)] list of spec-ratio lines.
     Returns the bar heights so the caller can check them against the break.
     """
     df = result_df[["speedup", "node_hours"]].dropna()
@@ -214,6 +273,10 @@ def _draw_panel(
     hist_label = legend_label if legend_label is not None else gpu_name
     counts, bin_edges, _ = ax_lo.hist(s, label=hist_label, **hist_kw)
     ax_hi.hist(s, **hist_kw)
+
+    # Baselines are drawn after the histogram so the legend lists it first.
+    if baselines:
+        _draw_baselines(ax_hi, ax_lo, baselines, xlim, show_label=baseline_legend)
 
     in_range = (s >= bin_edges[0]) & (s <= bin_edges[-1])
     outside = node_hours[~in_range].sum()
@@ -272,11 +335,23 @@ def plot_speedup_distribution_stacked(
     ytick_step=5.0,
     xlim=(-0.1, 3.1),
     xtick_step=0.2,
+    baselines=None,
+    baseline_offaxis="extend",
 ):
     """Two stacked panels, shared x-axis, identical broken y-axes."""
     lo_pct, hi_pct = ybreak
     if not 0 < lo_pct < hi_pct < ytop:
         raise ValueError(f"Need 0 < break_low < break_high < ytop; got {ybreak}, ytop={ytop}.")
+
+    # Widen the x-range so every baseline line is visible ("extend"), or keep
+    # it and mark off-axis lines with an arrow at the edge ("arrow").
+    if baselines and baseline_offaxis == "extend":
+        vmax = max(v for _, v in baselines)
+        if vmax > xlim[1]:
+            new_hi = np.ceil(vmax / xtick_step - 1e-9) * xtick_step + 0.1
+            print(f"Extending x-axis upper limit from {xlim[1]} to {new_hi:.2f} "
+                  f"to show the {vmax:.2f}x baseline.")
+            xlim = (xlim[0], float(new_hi))
 
     top_total = total_node_hours(top_df)
     bot_total = total_node_hours(bottom_df)
@@ -293,12 +368,16 @@ def plot_speedup_distribution_stacked(
     else:
         denom_top, denom_bot = top_total, bot_total
 
+    # The spec-ratio baseline has no non-GPU term, so the same lines appear in
+    # both panels; their legend entries are shown in the top panel only.
     panel_cfg = [
         dict(df=top_df, denom=denom_top, gpu_name="H100",
-             color="gold", edgecolor="darkgoldenrod", legend_label=None),
+             color="gold", edgecolor="darkgoldenrod", legend_label=None,
+             baseline_legend=True),
         dict(df=bottom_df, denom=denom_bot, gpu_name="H100-NG2",
              color="sandybrown", edgecolor="darkorange",
-             legend_label="Hypothetical H100\n(Non-GPU Portion Scale Up 2x)"),
+             legend_label="Hypothetical H100\n(Non-GPU Portion Scale Up 2x)",
+             baseline_legend=False),
     ]
 
     # --- Layout: every segment exists before any overlay axis is placed ---
@@ -321,6 +400,7 @@ def plot_speedup_distribution_stacked(
         counts = _draw_panel(
             ax_hi, ax_lo, ax_cum, cfg["df"], cfg["gpu_name"], cfg["color"],
             cfg["edgecolor"], bins, y_mode, cfg["denom"], cfg["legend_label"],
+            baselines=baselines, xlim=xlim, baseline_legend=cfg["baseline_legend"],
         )
         full = _full_scale(y_mode, cfg["denom"])
         _check_bars_against_break(cfg["gpu_name"], counts, full, lo_pct, hi_pct, ytop)
@@ -377,6 +457,14 @@ def parse_args():
         "--xlim", type=float, nargs=2, default=(-0.1, 3.1), metavar=("XMIN", "XMAX"),
         help="Speedup range shown on the x-axis (default: -0.1 3.1).",
     )
+    parser.add_argument("--no-baselines", dest="baselines", action="store_false",
+                        help="Do not draw the spec-ratio baseline lines.")
+    parser.add_argument(
+        "--baseline-offaxis", choices=("extend", "arrow"), default="extend",
+        help="For baseline lines beyond --xlim: widen the x-axis to show them "
+        "('extend', default) or keep the x-axis and mark them with an arrow "
+        "at the panel edge ('arrow').",
+    )
     return parser.parse_args()
 
 
@@ -385,6 +473,12 @@ def main():
 
     top_df = load_parquet_folder(args.top_input_dir, max_node_hours=args.max_node_hours)
     bottom_df = load_parquet_folder(args.bottom_input_dir, max_node_hours=args.max_node_hours)
+
+    baselines = None
+    if args.baselines:
+        baselines = spec_ratio_baselines(BASELINE_REF, BASELINE_TGT)
+        for name, v in baselines:
+            print(f"Baseline {BASELINE_REF} -> {BASELINE_TGT}, {name}: {v:.3f}x")
 
     plot_speedup_distribution_stacked(
         top_df=top_df,
@@ -397,6 +491,8 @@ def main():
         ytop=args.ytop,
         ytick_step=args.ytick_step,
         xlim=tuple(args.xlim),
+        baselines=baselines,
+        baseline_offaxis=args.baseline_offaxis,
     )
     print(f"Plot saved to {args.outpath}")
 
