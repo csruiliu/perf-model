@@ -51,7 +51,7 @@ def _draw_baselines(ax, baselines, xlim, show_label):
     offaxis = 0
     for name, value in baselines:
         style = BASELINE_STYLES[name]
-        label = f"Spec ratio: {name} ({value:.2f}\u00d7)" if show_label else "_nolegend_"
+        label = f"Spec Scale: {name} ({value:.2f}\u00d7)" if show_label else "_nolegend_"
         ax.axvline(value, linewidth=BASELINE_LW, zorder=3, label=label, **style)
         if not (xlim[0] <= value <= xlim[1]):
             right = value > xlim[1]
@@ -142,6 +142,7 @@ def _draw_panel(
     y_mode,
     denom,
     show_xlabel,
+    show_ylabels=True,
     legend_label=None,
     baselines=None,
     xlim=None,
@@ -154,6 +155,8 @@ def _draw_panel(
     `denom` is the node-hour total used for normalization; pass the *same*
     value for both panels when the two panels describe the same job set, so
     the bar heights are directly comparable.
+    `show_ylabels` controls whether this panel gets the left/right axis titles
+    (in the stacked figure only one panel carries them, centered on both).
     `baselines` is an optional [(name, speedup)] list of spec-ratio lines.
     `legend_anchor` = (x, y) puts the legend's upper-right corner at speedup x
     and axes-fraction height y; None keeps the original upper-left placement.
@@ -230,12 +233,14 @@ def _draw_panel(
     # X label only on the bottom panel.
     if show_xlabel:
         ax.set_xlabel("Speedup Relative to A100", fontsize=26)
-    ax.set_ylabel(YMODE_LABELS[y_mode], fontsize=21)
-    ax2.set_ylabel("Cumulative Percentage (%)", fontsize=20)
+    # Y titles only on the panel that carries the shared titles.
+    if show_ylabels:
+        ax.set_ylabel(YMODE_LABELS[y_mode], fontsize=21)
+        ax2.set_ylabel("Cumulative Percentage (%)", fontsize=21)
 
     ax2.set_ylim(0, 110)
 
-    ax2.tick_params(which="both", direction="in", labelsize=23)
+    ax2.tick_params(which="both", direction="in", labelsize=21)
 
     handles, labels = ax.get_legend_handles_labels()
     leg_kw = dict(frameon=True, framealpha=1.0, edgecolor="black", facecolor="white")
@@ -311,6 +316,7 @@ def plot_speedup_distribution_stacked(
     top_legend_anchor=None,
     bottom_legend_anchor=None,
     legend_fontsize=16,
+    fig_height=7.0,
 ):
     """Two stacked panels sharing the x-axis, no vertical gap between them."""
     # Widen the x-range so every baseline line is visible ("extend"), or keep
@@ -334,7 +340,7 @@ def plot_speedup_distribution_stacked(
         top_anchor = bot_anchor = None
 
     fig, (ax_top, ax_bot) = plt.subplots(
-        2, 1, figsize=(14, 10), sharex=True, gridspec_kw={"hspace": 0.0}
+        2, 1, figsize=(14, fig_height), sharex=True, gridspec_kw={"hspace": 0.0}
     )
 
     top_total = total_node_hours(top_df)
@@ -357,7 +363,7 @@ def plot_speedup_distribution_stacked(
 
     # The spec-ratio baseline has no non-GPU term, so the same lines appear in
     # both panels; their legend entries are shown in the top panel only.
-    _, counts_top, edges_top, leg_top, cum_top = _draw_panel(
+    ax2_top, counts_top, edges_top, leg_top, cum_top = _draw_panel(
         ax_top,
         top_df,
         gpu_name="Blackwell-Ultra",
@@ -367,6 +373,7 @@ def plot_speedup_distribution_stacked(
         y_mode=y_mode,
         denom=denom_top,
         show_xlabel=False,
+        show_ylabels=True,   # the shared titles live on the top panel
         baselines=baselines,
         xlim=xlim,
         baseline_legend=True,
@@ -374,7 +381,7 @@ def plot_speedup_distribution_stacked(
         legend_fontsize=legend_fontsize,
     )
 
-    _, counts_bot, edges_bot, leg_bot, cum_bot = _draw_panel(
+    ax2_bot, counts_bot, edges_bot, leg_bot, cum_bot = _draw_panel(
         ax_bot,
         bottom_df,
         gpu_name="Blackwell-Ultra-NG4",
@@ -384,7 +391,8 @@ def plot_speedup_distribution_stacked(
         y_mode=y_mode,
         denom=denom_bot,
         show_xlabel=True,
-        # Wrapped onto four lines so the legend fits the narrow right-hand gap.
+        show_ylabels=False,
+        # Wrapped onto two lines so the legend fits the narrow right-hand gap.
         legend_label=("Hypothetical-Blackwell-Ultra\n(Non-GPU Portion Scale Up 4x)"),
         baselines=baselines,
         xlim=xlim,
@@ -405,11 +413,20 @@ def plot_speedup_distribution_stacked(
         np.arange(np.ceil(xlim[0] / label_step - 1e-9) * label_step,
                   xlim[1] + 1e-9, label_step), 10)
 
-    for ax in (ax_top, ax_bot):
+    for ax, ax2 in ((ax_top, ax2_top), (ax_bot, ax2_bot)):
+        is_top = ax is ax_top
         # Round the top of the axis up to a "nice" number with ~15% headroom
         # so the legend does not overlap the tallest bar.
         ax.set_ylim(0, _nice_upper_limit(1.15 * ymax_data))
-        ax.yaxis.set_major_locator(mticker.MaxNLocator(nbins=6, steps=[1, 2, 2.5, 5, 10]))
+        # The bottom panel drops a left tick that sits exactly on its top edge,
+        # so it does not collide with the top panel's 0% at the shared boundary.
+        ytop = ax.get_ylim()[1]
+        yticks = mticker.MaxNLocator(nbins=5, steps=[1, 2, 2.5, 5, 10]).tick_values(0, ytop)
+        eps = 1e-9 * ytop
+        yticks = [t for t in yticks
+                  if -eps <= t <= ytop + eps and (is_top or t < ytop - eps)]
+        ax.yaxis.set_major_locator(mticker.FixedLocator(yticks))
+        ax2.yaxis.set_major_locator(mticker.FixedLocator([0, 25, 50, 75, 100]))
 
         # Append "%" to the left-axis tick labels. `xmax` is the value that
         # corresponds to 100%, so it must match the chosen y_mode.
@@ -425,7 +442,14 @@ def plot_speedup_distribution_stacked(
             ax.tick_params(axis="x", which="minor", length=3, width=1.5)
 
         ax.tick_params(axis="x", length=4.5, width=2)
-        ax.tick_params(which="both", direction="in", labelsize=19)
+        ax.tick_params(which="both", direction="in", labelsize=21)
+
+    # One left and one right y-axis title for the whole figure: keep them on the
+    # top panel but center them on the panel boundary (y = 0 in the top panel's
+    # axes coordinates, since hspace = 0). Matplotlib still places them
+    # horizontally clear of the tick labels.
+    ax_top.yaxis.label.set_y(0.0)
+    ax2_top.yaxis.label.set_y(0.0)
 
     if legend_right:
         _check_legend_overlap("top panel", fig, ax_top, leg_top, counts_top,
@@ -502,6 +526,9 @@ def parse_args():
     )
     parser.add_argument("--legend-fontsize", type=float, default=16,
                         help="Legend font size when legends are on the right (default: 16).")
+    parser.add_argument("--fig-height", type=float, default=7.0,
+                        help="Total figure height in inches for both panels "
+                        "(default: 7.0; previously 10). Width stays 14.")
     return parser.parse_args()
 
 
@@ -531,6 +558,7 @@ def main():
         top_legend_anchor=args.top_legend_anchor,
         bottom_legend_anchor=args.bottom_legend_anchor,
         legend_fontsize=args.legend_fontsize,
+        fig_height=args.fig_height,
     )
     print(f"Plot saved to {args.outpath}")
 

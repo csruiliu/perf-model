@@ -11,6 +11,7 @@ plt.rcParams['axes.formatter.limits'] = (-100, 100)
 
 FRAME_LW = 2
 CUM_COLOR = "mediumorchid"
+CUM_LABEL = "Cumulative Percentage (%)"
 
 # ---------------------------------------------------------------------------
 # Naive spec-ratio baselines (no DCGM counters)
@@ -168,7 +169,7 @@ def _style_segments(ax_hi, ax_lo):
         for side in ("left", "top", "bottom"):
             ax.spines[side].set_linewidth(FRAME_LW)
         ax.spines["right"].set_visible(False)
-        ax.tick_params(which="both", direction="in", labelsize=19)
+        ax.tick_params(which="both", direction="in", labelsize=21)
     ax_hi.spines["bottom"].set_visible(False)
     ax_lo.spines["top"].set_visible(False)
     ax_hi.tick_params(axis="x", which="both", bottom=False, labelbottom=False)
@@ -219,25 +220,45 @@ def _align_cumulative_axis(ax_cum, ax_hi, ax_lo, full):
         ax_cum.set_ylim(0, 100.0 / frac)
     else:
         ax_cum.set_ylim(0, 110)
-    ax_cum.yaxis.set_major_locator(mticker.MultipleLocator(20))
+    ax_cum.yaxis.set_major_locator(mticker.FixedLocator([0, 25, 50, 75, 100]))
 
 
-def _center_left_label(fig, ax_hi, ax_lo, text, fontsize):
-    """Center the left y-label on the whole panel, just left of the tick labels."""
-    ax_lo.set_ylabel(text, fontsize=fontsize)
+def _center_shared_left_label(fig, segments, text, fontsize):
+    """One left y-label for the whole figure.
+
+    It is attached to the bottom panel's lower segment, centered vertically
+    between the bottom of the bottom panel and the top of the top panel, and
+    placed just left of the widest tick label in any segment.
+    """
+    ax_anchor = segments[-1][1]
+    ax_anchor.set_ylabel(text, fontsize=fontsize)
     fig.canvas.draw()
     renderer = fig.canvas.get_renderer()
     labels = [
-        t for ax in (ax_hi, ax_lo) for t in ax.get_yticklabels()
+        t for pair in segments for ax in pair for t in ax.get_yticklabels()
         if t.get_visible() and t.get_text()
     ]
     x_left = min(t.get_window_extent(renderer).x0 for t in labels)
     pad_px = 6 * fig.dpi / 72.0
-    bb = ax_lo.bbox
+    bb = ax_anchor.bbox
     x = (x_left - pad_px - bb.x0) / bb.width
-    y_mid = (ax_lo.get_position().y0 + ax_hi.get_position().y1) / 2.0
-    y = (y_mid - ax_lo.get_position().y0) / ax_lo.get_position().height
-    ax_lo.yaxis.set_label_coords(x, y, transform=ax_lo.transAxes)
+    p = ax_anchor.get_position()
+    y_mid = (p.y0 + segments[0][0].get_position().y1) / 2.0
+    y = (y_mid - p.y0) / p.height
+    ax_anchor.yaxis.set_label_coords(x, y, transform=ax_anchor.transAxes)
+
+
+def _center_shared_right_label(cum_axes, text, fontsize):
+    """One right y-label for the whole figure, on the bottom cumulative axis.
+
+    Only its vertical position is changed; matplotlib still places it
+    horizontally clear of the right tick labels.
+    """
+    ax_anchor = cum_axes[-1]
+    ax_anchor.set_ylabel(text, fontsize=fontsize)
+    p = ax_anchor.get_position()
+    y_mid = (p.y0 + cum_axes[0].get_position().y1) / 2.0
+    ax_anchor.yaxis.label.set_y((y_mid - p.y0) / p.height)
 
 
 # ---------------------------------------------------------------------------
@@ -246,13 +267,14 @@ def _center_left_label(fig, ax_hi, ax_lo, text, fontsize):
 def _draw_panel(
     ax_hi, ax_lo, ax_cum, result_df, gpu_name, color, edgecolor, bins,
     y_mode, denom, legend_label=None, baselines=None, xlim=None,
-    baseline_legend=True,
+    baseline_legend=True, legend_fontsize=15,
 ):
     """Draw one speedup histogram (in both y-segments) + cumulative % curve.
 
     `denom` is the node-hour total used for normalization; pass the same value
     for both panels when they describe the same job set.
     `baselines` is an optional [(name, speedup)] list of spec-ratio lines.
+    Axis titles are added by the caller (one shared pair for the figure).
     Returns the bar heights so the caller can check them against the break.
     """
     df = result_df[["speedup", "node_hours"]].dropna()
@@ -298,12 +320,11 @@ def _draw_panel(
         s[order], cum, linestyle=(0, (5, 1)), linewidth=2, color=CUM_COLOR,
         label=f"{gpu_name} cumulative %",
     )
-    ax_cum.set_ylabel("Cumulative Percentage (%)", fontsize=20)
-    ax_cum.tick_params(which="both", direction="in", labelsize=23)
+    ax_cum.tick_params(which="both", direction="in", labelsize=21)
 
     handles, labels = ax_lo.get_legend_handles_labels()
     leg = ax_cum.legend(
-        handles, labels, loc="upper left", fontsize=18, frameon=True,
+        handles, labels, loc="upper left", fontsize=legend_fontsize, frameon=True,
         framealpha=1.0, edgecolor="black", facecolor="white",
     )
     leg.set_zorder(20)
@@ -337,6 +358,8 @@ def plot_speedup_distribution_stacked(
     xtick_step=0.2,
     baselines=None,
     baseline_offaxis="extend",
+    fig_height=7.0,
+    legend_fontsize=15,
 ):
     """Two stacked panels, shared x-axis, identical broken y-axes."""
     lo_pct, hi_pct = ybreak
@@ -381,7 +404,7 @@ def plot_speedup_distribution_stacked(
     ]
 
     # --- Layout: every segment exists before any overlay axis is placed ---
-    fig = plt.figure(figsize=(14, 10))
+    fig = plt.figure(figsize=(14, fig_height))
     outer = fig.add_gridspec(2, 1, hspace=0.0)
     segments, sharex = [], None
     for i in range(2):
@@ -401,6 +424,7 @@ def plot_speedup_distribution_stacked(
             ax_hi, ax_lo, ax_cum, cfg["df"], cfg["gpu_name"], cfg["color"],
             cfg["edgecolor"], bins, y_mode, cfg["denom"], cfg["legend_label"],
             baselines=baselines, xlim=xlim, baseline_legend=cfg["baseline_legend"],
+            legend_fontsize=legend_fontsize,
         )
         full = _full_scale(y_mode, cfg["denom"])
         _check_bars_against_break(cfg["gpu_name"], counts, full, lo_pct, hi_pct, ytop)
@@ -416,8 +440,9 @@ def plot_speedup_distribution_stacked(
         if is_bottom:
             ax_lo.set_xlabel("Speedup Relative to A100", fontsize=26)
 
-    for ax_hi, ax_lo in segments:
-        _center_left_label(fig, ax_hi, ax_lo, YMODE_LABELS[y_mode], fontsize=21)
+    # One left and one right y-axis title, each centered on both panels.
+    _center_shared_right_label(cum_axes, CUM_LABEL, fontsize=21)
+    _center_shared_left_label(fig, segments, YMODE_LABELS[y_mode], fontsize=21)
 
     fig.savefig(outpath, dpi=300, format="png", bbox_inches="tight")
     plt.close(fig)
@@ -465,6 +490,11 @@ def parse_args():
         "('extend', default) or keep the x-axis and mark them with an arrow "
         "at the panel edge ('arrow').",
     )
+    parser.add_argument("--fig-height", type=float, default=7.0,
+                        help="Total figure height in inches for both panels "
+                        "(default: 7.0; previously 10). Width stays 14.")
+    parser.add_argument("--legend-fontsize", type=float, default=15,
+                        help="Legend font size (default: 15; previously 18).")
     return parser.parse_args()
 
 
@@ -493,6 +523,8 @@ def main():
         xlim=tuple(args.xlim),
         baselines=baselines,
         baseline_offaxis=args.baseline_offaxis,
+        fig_height=args.fig_height,
+        legend_fontsize=args.legend_fontsize,
     )
     print(f"Plot saved to {args.outpath}")
 

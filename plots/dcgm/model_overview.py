@@ -203,7 +203,7 @@ ax_a.set_yticks([y + 0.5 for *_, y in lanes])
 ax_a.set_yticklabels([n for n, *_ in lanes])
 ax_a.set_ylim(-0.1, 3.0)
 clean(ax_a)
-title(ax_a, r"(a) Actual activity in one sample of length $\tau$ (profiler view)")
+title(ax_a, r"(a) Example activity in one sample of length $\tau$ (profiler view)")
 
 # ----------------------------------------------------------------------------
 # (b) What DCGM records
