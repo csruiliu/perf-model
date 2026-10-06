@@ -393,7 +393,7 @@ def plot_speedup_distribution_stacked(
         show_xlabel=True,
         show_ylabels=False,
         # Wrapped onto two lines so the legend fits the narrow right-hand gap.
-        legend_label=("Hypothetical-Blackwell-Ultra\n(Non-GPU Portion Scale Up 4x)"),
+        legend_label=("Hypothetical-Blackwell-Ultra\n(Non-Kernel Portion Scale Up 4x)"),
         baselines=baselines,
         xlim=xlim,
         baseline_legend=False,

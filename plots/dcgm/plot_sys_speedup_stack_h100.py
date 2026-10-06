@@ -399,7 +399,7 @@ def plot_speedup_distribution_stacked(
              baseline_legend=True),
         dict(df=bottom_df, denom=denom_bot, gpu_name="H100-NG2",
              color="sandybrown", edgecolor="darkorange",
-             legend_label="Hypothetical H100\n(Non-GPU Portion Scale Up 2x)",
+             legend_label="Hypothetical H100\n(Non-Kernel Portion Scale Up 2x)",
              baseline_legend=False),
     ]
 
