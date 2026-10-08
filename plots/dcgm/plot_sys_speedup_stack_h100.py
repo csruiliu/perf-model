@@ -32,9 +32,9 @@ BASELINE_TGT = "H100"
 
 # Distinct colors AND line styles, so the lines stay readable in grayscale.
 BASELINE_STYLES = {
-    "Mem. BW":   dict(color="navy",      linestyle=(0, (6, 3))),
-    "FP64":      dict(color="firebrick", linestyle=(0, (1.5, 1.5))),
-    "Geo. mean": dict(color="darkgreen", linestyle=(0, (6, 2, 1.5, 2))),
+    "Memory BW Scale":   dict(color="navy",      linestyle=(0, (6, 3))),
+    "FP64 Scale":      dict(color="firebrick", linestyle=(0, (1.5, 1.5))),
+    "Geometric Mean Scale": dict(color="darkgreen", linestyle=(0, (6, 2, 1.5, 2))),
 }
 BASELINE_LW = 2.5
 
@@ -43,7 +43,7 @@ def spec_ratio_baselines(ref, tgt):
     """Return [(name, speedup)] for the three naive spec-ratio baselines."""
     r = {k: SPECS[tgt][k] / SPECS[ref][k] for k in SPECS[ref]}
     geo = float(np.exp(np.mean(np.log(list(r.values())))))
-    return [("Mem. BW", r["dram"]), ("FP64", r["fp64"]), ("Geo. mean", geo)]
+    return [("Memory BW Scale", r["dram"]), ("FP64 Scale", r["fp64"]), ("Geometric Mean Scale", geo)]
 
 
 def _draw_baselines(ax_hi, ax_lo, baselines, xlim, show_label):
@@ -55,7 +55,7 @@ def _draw_baselines(ax_hi, ax_lo, baselines, xlim, show_label):
     offaxis = 0
     for name, value in baselines:
         style = BASELINE_STYLES[name]
-        label = f"Spec Scale: {name} ({value:.2f}\u00d7)" if show_label else "_nolegend_"
+        label = f"{name}: ({value:.2f}\u00d7)" if show_label else "_nolegend_"
         ax_lo.axvline(value, linewidth=BASELINE_LW, zorder=3, label=label, **style)
         ax_hi.axvline(value, linewidth=BASELINE_LW, zorder=3, **style)
         if not (xlim[0] <= value <= xlim[1]):
