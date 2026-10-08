@@ -21,7 +21,7 @@ GPUSpec = {
         "fp64": 0.58, "tf64": 0, "fp32": 37.4, "tf32": 74.8, "fp16": 37.4, "tf16": 150,
         "mem_bw": 696, "pcie_bw": 32, "nvlink_bw": 112.5, "l2_cache": 6,
         "base_clock": 1305, "boost_clock": 1740, "mem_clock": 1812,
-        "max_warps_sm": 64, "reg_size_sm": 256, "shmem_sm": 96, "num_sm": 84
+        "max_warps_sm": 48, "reg_size_sm": 256, "shmem_sm": 96, "num_sm": 84
     },
     "A100-SXM-40": {
         "fp64": 9.7, "tf64": 19.5, "fp32": 19.5, "tf32": 156, "fp16": 78, "tf16": 312,
