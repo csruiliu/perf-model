@@ -7,7 +7,7 @@ import pandas as pd
 
 from counter_model.dcgm.constants import SMOCC_LEVELS
 from counter_model.dcgm.data_classes import MetricValues
-from counter_model.dcgm.scaler import GpuScaler, HostScaler, get_tf_weights
+from counter_model.dcgm.scaler import GpuScaler, HostScaler, effective_tensor_peak, get_tf_weights
 from counter_model.dcgm.time_aggregator import TimeAggregator
 from counter_model.hw_config.hw_specs import GPU, Host
 
@@ -84,16 +84,15 @@ class SingleGpuEstimator(BaseEstimator):
                 mv_gract_norm["fp16a_gract"],
             )
 
-            tf_precisions = ("tf64", "tf32", "tf16")
-            tf_tgt = sum(tf_weights[p] * self.tgt_gpu.get_specs(p) for p in tf_precisions)
-            tf_ref = sum(tf_weights[p] * self.ref_gpu.get_specs(p) for p in tf_precisions)
+            tf_ref = effective_tensor_peak(tf_weights, self.ref_gpu)  # β_tensor^ref
+            tf_tgt = effective_tensor_peak(tf_weights, self.tgt_gpu)  # β_tensor^tgt
 
             # Calculate time fraction on ref gpu
             time_frac_ref = self.time_aggregator.time_fraction_single_gpu_ref(mv)
 
             # Update SMOCC and calculate all scales
             gpu_scaler.update_smocc(mv_gract_norm["smocc_gract"])
-            gpu_scaler.update_scale_kernel(mv_gract_norm, tf_weights)
+            gpu_scaler.update_scale_kernel(mv_gract_norm, tf_ref, tf_tgt)
 
             # Host time
             t_residual_tgt = time_frac_ref.t_residual / host_scaler.host_scale(cores_alloc)

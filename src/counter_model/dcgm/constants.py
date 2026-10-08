@@ -51,3 +51,6 @@ GPU_MIN_INTENSITY_THRESHOLD = 0.01
 
 # SMOCC-level constants for estimation
 SMOCC_LEVELS = ["lower", "mid", "upper", "mock"]
+
+# tensor-peak key -> matching non-tensor-peak key
+TF_TO_FP = {"tf64": "fp64", "tf32": "fp32", "tf16": "fp16"}

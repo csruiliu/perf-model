@@ -1,25 +1,48 @@
 import numpy as np
 
-from counter_model.dcgm.constants import GPU_MIN_INTENSITY_THRESHOLD
+from counter_model.dcgm.constants import GPU_MIN_INTENSITY_THRESHOLD, TF_TO_FP
 from counter_model.hw_config.hw_specs import GPU, Host
 
 
-def get_tf_weights(fp64a: float, fp32a: float, fp16a: float, threshold=0.01) -> dict[str, float]:
+def get_tf_weights(
+    fp64a: float, fp32a: float, fp16a: float, ref_gpu: GPU, threshold: float = 0.01
+) -> dict[str, float]:
     """
-    Calculate weights for tf64, tf32, tf16 based on FP operations
+    FLOP-share weights for the tensor precision mix (numerator terms of Eq. 10b):
+        w_p ∝ A_fpp^ref * β_fpp^ref
+    Precisions with no tensor support on the reference GPU are excluded, since
+    tensor activity observed on the reference cannot have been at that precision.
     """
-    # Apply threshold - treat values < 0.01 as 0
-    fp64a = fp64a if fp64a >= threshold else 0.0
-    fp32a = fp32a if fp32a >= threshold else 0.0
-    fp16a = fp16a if fp16a >= threshold else 0.0
+    activity = {"tf64": fp64a, "tf32": fp32a, "tf16": fp16a}
+    supported = [p for p in TF_TO_FP if ref_gpu.get_specs(p) > 0]
 
-    total = fp64a + fp32a + fp16a
+    flop_share = {p: 0.0 for p in TF_TO_FP}
+    for p in supported:
+        a = activity[p]
+        if a >= threshold:
+            flop_share[p] = a * ref_gpu.get_specs(TF_TO_FP[p])
 
-    # If total is 0 (and TENSO > 0.01, this is guaranteed in other function), give equal weights
-    if total == 0:
-        return {"tf64": 1 / 3, "tf32": 1 / 3, "tf16": 1 / 3}
+    total = sum(flop_share.values())
+    if total == 0.0:
+        # Conservative fallback: equal FLOP shares over reference-supported precisions
+        n = len(supported)
+        return {p: (1.0 / n if p in supported else 0.0) for p in TF_TO_FP}
 
-    return {"tf64": fp64a / total, "tf32": fp32a / total, "tf16": fp16a / total}
+    return {p: s / total for p, s in flop_share.items()}
+
+
+def effective_tensor_peak(tf_weights: dict[str, float], gpu: GPU) -> float:
+    """
+    Weighted harmonic mean of per-precision tensor peaks (Eq. 10b):
+        β_tensor^a = 1 / Σ_p ( ŵ_p / β_tfp^a )
+    """
+    denom = 0.0
+    for p, w in tf_weights.items():
+        if w == 0.0:
+            continue
+        denom += w / gpu.get_specs(p)
+    
+    return 1.0 / denom if denom > 0.0 else 0.0
 
 
 class HostScaler:
@@ -81,31 +104,30 @@ class GpuScaler:
             else:
                 self.scale_smocc[key] = k_smocc_tgt / k_smocc_ref
 
-    def update_scale_kernel(self, mv_gract_norm: dict, tf_weights: dict):
-        tf_precisions = ("tf64", "tf32", "tf16")
-        tf_tgt = sum(tf_weights[p] * self.tgt_gpu.get_specs(p) for p in tf_precisions)
-        tf_ref = sum(tf_weights[p] * self.ref_gpu.get_specs(p) for p in tf_precisions)
+    def update_scale_kernel(self, mv_gract_norm: dict, tf_ref: float, tf_tgt: float):
+        """
+        Per-resource scale factors K^tgt/K^ref (Eqs. 9c, 10a); the tightest governs (Eq. 11).
+        Below-threshold activities are non-binding and simply omitted. The input dict
+        is NOT mutated.
+        """
+        ceilings = []
+        # Eq. (10a), second argument: β_tensor^tgt / (A_tensor^ref β_tensor^ref)
+        if mv_gract_norm["tenso_gract"] >= GPU_MIN_INTENSITY_THRESHOLD and tf_ref > 0.0:
+            ceilings.append(tf_tgt / (tf_ref * mv_gract_norm["tenso_gract"]))
 
-        # Below-threshold intensities are treated as infinite (i.e. non-binding),
-        # so their ratio contribution collapses to 0 and won't drive the min.
-        gract_keys = ("tenso_gract", "drama_gract", "fp64a_gract", "fp32a_gract", "fp16a_gract")
-        for key in gract_keys:
-            if mv_gract_norm[key] < GPU_MIN_INTENSITY_THRESHOLD:
-                mv_gract_norm[key] = np.inf
+        # Eq. (9c) and the analogous non-tensor FP ceilings
+        for key, ratio in (
+            ("drama_gract", self.bw_ratio),
+            ("fp64a_gract", self.fp64_ratio),
+            ("fp32a_gract", self.fp32_ratio),
+            ("fp16a_gract", self.fp16_ratio),
+        ):
+            if mv_gract_norm[key] >= GPU_MIN_INTENSITY_THRESHOLD:
+                ceilings.append(ratio / mv_gract_norm[key])
 
-        scale_factors = [
-            tf_tgt / (tf_ref * mv_gract_norm["tenso_gract"]),
-            self._get_ratio("mem_bw") / mv_gract_norm["drama_gract"],
-            self._get_ratio("fp64") / mv_gract_norm["fp64a_gract"],
-            self._get_ratio("fp32") / mv_gract_norm["fp32a_gract"],
-            self._get_ratio("fp16") / mv_gract_norm["fp16a_gract"],
-        ]
-
-        # Candidate scale ratio per resource; the tightest one governs, ignore zeros
+        # min(γ, ·) for every ceiling == global min including γ (Eq. 11)
         for level in self.smocc_levels:
-            scale_factors.append(self.scale_smocc[level])
-            self.scale_kernel[level] = min(x for x in scale_factors if x != 0)
-            scale_factors.pop()
+            self.scale_kernel[level] = min(ceilings + [self.scale_smocc[level]])
 
     def pcie_scale(self):
         return self._get_ratio("pcie_bw")
@@ -123,12 +145,6 @@ class GpuScaler:
         self.fp64_ratio = self._get_ratio("fp64")
         self.fp32_ratio = self._get_ratio("fp32")
         self.fp16_ratio = self._get_ratio("fp16")
-
-    def _get_tensor_ratio(self, precision: str) -> float:
-        """Compute ratio for a specific precision"""
-        if precision not in self.precision_ratios:
-            self.precision_ratios[precision] = self._get_ratio(precision)
-        return self.precision_ratios[precision]
 
     def _get_ratio(self, spec: str) -> float:
         """Helper to compute target/reference ratio for a given spec"""
