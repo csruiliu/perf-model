@@ -3,15 +3,16 @@ Overview figure for "Towards Workload-Scale Performance Prediction
 From Passive GPU Telemetry".
 
 Panels
-  (a) Actual activity inside one reference sample (profiler-style timeline).
-  (b) What DCGM records: on/off activity collapses to an interval average.
-  (c) Model projection: the reference interval is decomposed into
+  (a) Actual on/off activity inside one reference sample (profiler-style
+      trace) overlaid with what DCGM records: the dashed line is the
+      interval average, which is all that survives; timing is lost.
+  (b) Model projection: the reference interval is decomposed into
       kernel / expected overlap / PCIe / residual (Eqs. 2-4, 13, 14) and each
       part is rescaled to the target; tau_tgt is solved from Eq. 17.
 
-All numbers in panels (b) and (c) are computed from the timeline in (a)
-using the model equations, so the figure stays internally consistent if you
-edit the CONFIG block.
+All numbers in both panels are computed from the timeline in CONFIG using
+the model equations, so the figure stays internally consistent if you edit
+the CONFIG block.
 
 Usage:  python fig_model_overview.py      -> fig_model_overview.pdf / .png
         FONT_STYLE=serif python fig_model_overview.py   (Times version)
@@ -33,6 +34,8 @@ Font setup on Debian (README)
   Check embedding:  pdffonts fig_model_overview.pdf   (type should be TrueType)
 """
 
+import os
+
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch, Rectangle
@@ -51,7 +54,8 @@ KERNEL_SPEEDUP = 2.0   # smallest ceiling ratio in Eq. 12
 PCIE_SPEEDUP = 2.0     # beta_pcie^tgt / beta_pcie^ref (64 / 32 GB/s)
 RHO_RES = 1.0          # residual scale factor (Eq. 15)
 
-import os
+SHOW_OTHER = True      # gray "Other" lane in (a); no dashed mean (DCGM does not report it)
+
 FONT_STYLE = os.environ.get("FONT_STYLE", "sans")   # "sans" (modern) or "serif" (Times, matches body)
 # Sans-serif face to use. Helvetica-style options on Debian:
 #   "TeX Gyre Heros" (apt: fonts-texgyre)  or  "Nimbus Sans" (apt: fonts-urw-base35)
@@ -59,7 +63,7 @@ FONT_STYLE = os.environ.get("FONT_STYLE", "sans")   # "sans" (modern) or "serif"
 SANS_FONT = os.environ.get("SANS_FONT", "TeX Gyre Heros")
 
 FIG_WIDTH = 3.5        # in; IEEE single column (use 7.16 for figure*)
-FIG_HEIGHT = 3.15
+FIG_HEIGHT = 2.35 if not SHOW_OTHER else 2.6
 OUT = "fig_model_overview" if FONT_STYLE == "sans" else "fig_model_overview_serif"
 
 C_KERNEL = "#1D9E75"   # teal
@@ -171,14 +175,15 @@ mpl.rcParams.update({
     "axes.linewidth": 0.5,
     "xtick.major.width": 0.5,
     "xtick.major.size": 2,
-    "hatch.linewidth": 0.6,
+    "hatch.linewidth": 1.5,   # orange overlap hatch in (b) and legend
     "pdf.fonttype": 42,   # embed TrueType (IEEE PDF eXpress friendly)
     "ps.fonttype": 42,
 })
 
-fig, (ax_a, ax_b, ax_c) = plt.subplots(
-    3, 1, figsize=(FIG_WIDTH, FIG_HEIGHT), sharex=True,
-    gridspec_kw={"height_ratios": [1.0, 1.15, 1.0], "hspace": 0.55},
+fig, (ax_a, ax_b) = plt.subplots(
+    2, 1, figsize=(FIG_WIDTH, FIG_HEIGHT), sharex=True,
+    gridspec_kw={"height_ratios": [1.25 if not SHOW_OTHER else 1.6, 1.0],
+                 "hspace": 0.5},
 )
 
 def clean(ax):
@@ -191,52 +196,50 @@ def title(ax, text):
     ax.set_title(text, loc="left", pad=3, color=C_TEXT)
 
 # ----------------------------------------------------------------------------
-# (a) Actual activity
+# (a) Actual activity + what DCGM records
 # ----------------------------------------------------------------------------
-lanes = [("Kernels", KERNELS, C_KERNEL, 2.0),
-         ("PCIe", PCIE, C_PCIE, 1.0),
-         ("Other", OTHER, C_RES, 0.0)]
-for _, iv, col, y in lanes:
-    ax_a.broken_barh([(s, e - s) for s, e in iv], (y + 0.15, 0.7),
-                     facecolors=col, edgecolor="white", linewidth=0.4)
-ax_a.set_yticks([y + 0.5 for *_, y in lanes])
-ax_a.set_yticklabels([n for n, *_ in lanes])
-ax_a.set_ylim(-0.1, 3.0)
-clean(ax_a)
-title(ax_a, r"(a) Example activity in one sample of length $\tau$ (profiler view)")
+LANE_H = 0.8   # height of an "on" pulse
 
-# ----------------------------------------------------------------------------
-# (b) What DCGM records
-# ----------------------------------------------------------------------------
-def step_trace(ax, iv, base, col, mean, label):
+def activity_lane(ax, iv, base, col, mean=None, label=None):
+    """On/off trace for one activity; dashed line = DCGM interval average."""
     xs, ys = [0.0], [base]
     for s, e in iv:
         xs += [s, s, e, e]
-        ys += [base, base + 0.8, base + 0.8, base]
+        ys += [base, base + LANE_H, base + LANE_H, base]
     xs.append(TAU); ys.append(base)
+    ax.fill_between(xs, base, ys, color=col, alpha=0.30, lw=0)
     ax.plot(xs, ys, color=col, lw=0.9, solid_joinstyle="miter")
-    ax.fill_between(xs, base, ys, color=col, alpha=0.15, lw=0)
-    ax.hlines(base + 0.8 * mean, 0, TAU, colors=col, linestyles=(0, (3, 2)),
-              lw=0.8)
-    ax.text(TAU * 1.01, base + 0.8 * mean, label, color=col, va="center",
-            ha="left", fontsize=7, clip_on=False)
+    if mean is not None:
+        ax.hlines(base + LANE_H * mean, 0, TAU, colors=col,
+                  linestyles=(0, (3, 2)), lw=0.9)
+        ax.text(TAU * 1.01, base + LANE_H * mean, label, color=col,
+                va="center", ha="left", fontsize=7, clip_on=False)
 
-step_trace(ax_b, KERNELS, 1.15, C_KERNEL, A_gract,
-           rf"$A_{{\mathrm{{gract}}}}={A_gract:.2f}$")
-step_trace(ax_b, PCIE, 0.0, C_PCIE, pcie_frac,
-           rf"$A_{{\mathrm{{pcie}}}}={pcie_frac:.2f}$")
-ax_b.set_yticks([1.55, 0.4])
-ax_b.set_yticklabels(["gr_active", "PCIe"])
-ax_b.set_ylim(-0.1, 2.05)
-clean(ax_b)
-title(ax_b, "(b) DCGM keeps only interval averages; timing is lost")
+lanes = [("Kernels", KERNELS, C_KERNEL, A_gract,
+          rf"$A_{{\mathrm{{gract}}}}={A_gract:.2f}$"),
+         ("PCIe", PCIE, C_PCIE, pcie_frac,
+          rf"$A_{{\mathrm{{pcie}}}}={pcie_frac:.2f}$")]
+if SHOW_OTHER:
+    lanes.append(("Residual", OTHER, C_RES, None, None))
+
+STEP = 1.15
+yticks = []
+for i, (name, iv, col, mean, label) in enumerate(lanes):
+    base = (len(lanes) - 1 - i) * STEP
+    activity_lane(ax_a, iv, base, col, mean, label)
+    yticks.append(base + LANE_H / 2)
+ax_a.set_yticks(yticks)
+ax_a.set_yticklabels([name for name, *_ in lanes])
+ax_a.set_ylim(-0.1, (len(lanes) - 1) * STEP + LANE_H + 0.1)
+clean(ax_a)
+title(ax_a, r"(a) Actual activity; DCGM reports only the dashed mean")
 
 # ----------------------------------------------------------------------------
-# (c) Projection
+# (b) Projection
 # ----------------------------------------------------------------------------
 def stacked(ax, y, tk, tp, ov, tr, h=0.62):
     segs = [(tk - ov, C_KERNEL, None),          # kernel only
-            (ov, C_KERNEL, "////"),             # expected overlap
+            (ov, C_KERNEL, "//////"),             # expected overlap
             (tp - ov, C_PCIE, None),            # PCIe only
             (tr, C_RES, None)]                  # residual
     x = 0.0
@@ -250,19 +253,19 @@ def stacked(ax, y, tk, tp, ov, tr, h=0.62):
         x += w
     return x
 
-end_ref = stacked(ax_c, 1.15, t_k_ref, t_p_ref, ov_ref, t_res_ref)
-end_tgt = stacked(ax_c, 0.15, t_k_tgt, t_p_tgt, ov_tgt, t_res_tgt)
-ax_c.text(end_ref - 0.08, 1.15 + 0.31, rf"$\tau={TAU:.0f}$ s", ha="right",
+end_ref = stacked(ax_b, 1.15, t_k_ref, t_p_ref, ov_ref, t_res_ref)
+end_tgt = stacked(ax_b, 0.15, t_k_tgt, t_p_tgt, ov_tgt, t_res_tgt)
+ax_b.text(end_ref - 0.08, 1.15 + 0.31, rf"$\tau^{{\mathrm{{ref}}}}={TAU:.0f}$ s", ha="right",
           va="center", fontsize=7, color=C_TEXT)
-ax_c.text(end_tgt + 0.12, 0.15 + 0.31,
+ax_b.text(end_tgt + 0.12, 0.15 + 0.31,
           rf"$\tau^{{\mathrm{{tgt}}}}={tau_tgt:.1f}$ s",
           ha="left", va="center", fontsize=7, color=C_TEXT)
-ax_c.set_yticks([1.46, 0.46])
-ax_c.set_yticklabels(["Reference", "Target"])
-ax_c.set_ylim(0.0, 1.95)
-clean(ax_c)
-ax_c.set_xlabel("Time within sample (s)", labelpad=1.5)
-title(ax_c, "(c) Each component rescaled; target interval solved")
+ax_b.set_yticks([1.46, 0.46])
+ax_b.set_yticklabels(["Reference", "Target"])
+ax_b.set_ylim(0.0, 1.95)
+clean(ax_b)
+ax_b.set_xlabel("Time within sample (s)", labelpad=1.5)
+title(ax_b, "(b) Each component rescaled; target interval solved")
 
 # ----------------------------------------------------------------------------
 # Shared legend
@@ -271,12 +274,14 @@ handles = [Patch(facecolor=C_KERNEL, label="Kernel"),
            Patch(facecolor=C_PCIE, label="PCIe"),
            Patch(facecolor=C_KERNEL, edgecolor=C_PCIE, hatch="////", lw=0,
                  label="Potential overlap"),
-           Patch(facecolor=C_RES, label="Residual / other")]
+           Patch(facecolor=C_RES, label="Residual")]
 fig.legend(handles=handles, loc="upper center", ncol=4, frameon=False,
            bbox_to_anchor=(0.5, 1.005), handlelength=1.2, columnspacing=0.9,
            handletextpad=0.4)
 
-fig.subplots_adjust(left=0.17, right=0.81, top=0.865, bottom=0.115)
+# Margins in inches, converted to figure fractions so they survive height changes.
+fig.subplots_adjust(left=0.17, right=0.81,
+                    top=1 - 0.42 / FIG_HEIGHT, bottom=0.36 / FIG_HEIGHT)
 fig.savefig(f"{OUT}.pdf")
 fig.savefig(f"{OUT}.png", dpi=300)
 print(f"wrote {OUT}.pdf and {OUT}.png")
