@@ -255,10 +255,10 @@ def stacked(ax, y, tk, tp, ov, tr, h=0.62):
 
 end_ref = stacked(ax_b, 1.15, t_k_ref, t_p_ref, ov_ref, t_res_ref)
 end_tgt = stacked(ax_b, 0.15, t_k_tgt, t_p_tgt, ov_tgt, t_res_tgt)
-ax_b.text(end_ref - 0.08, 1.15 + 0.31, rf"$\tau^{{\mathrm{{ref}}}}={TAU:.0f}$ s", ha="right",
+ax_b.text(end_ref - 0.08, 1.15 + 0.31, rf"$\tau^{{\mathrm{{ref}}}}={TAU:.0f}$s", ha="right",
           va="center", fontsize=7, color=C_TEXT)
 ax_b.text(end_tgt + 0.12, 0.15 + 0.31,
-          rf"$\tau^{{\mathrm{{tgt}}}}={tau_tgt:.1f}$ s",
+          rf"$\tau^{{\mathrm{{tgt}}}}={tau_tgt:.1f}$s",
           ha="left", va="center", fontsize=7, color=C_TEXT)
 ax_b.set_yticks([1.46, 0.46])
 ax_b.set_yticklabels(["Reference", "Target"])

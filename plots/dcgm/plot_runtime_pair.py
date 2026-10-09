@@ -1,51 +1,44 @@
 #!/usr/bin/env python3
 """Plot measured vs. predicted runtime for several applications as side-by-side
 panels that together fit one IEEE column (3.5 in). Fonts are set at their final
-printed size, so include the output at width=\\columnwidth without rescaling."""
+printed size, so include the output at width=\\columnwidth without rescaling.
+
+Data are hard-coded in PANELS below (runtime in seconds)."""
 
 import argparse
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-import pandas as pd
 
 # Legend labels match the estimator names used in the paper text.
 LABELS = ["Measured", r"$\Theta_{\min}$", r"$\Theta_{\mathrm{mean}}$",
           r"$\Theta_{\max}$", r"$\Theta_{\mathrm{mock}}$"]
-COLORS = ["silver", "mediumslateblue", "mediumpurple", "darkslateblue", "indigo"]
+COLORS = ["silver", "royalblue", "salmon", "seagreen", "darkorange"]
 HATCHES = ["", "//////", "\\\\\\\\\\\\", "xxxx", "oo"]
 
 COLUMN_WIDTH_IN = 3.5  # IEEE two-column \columnwidth
 
+# Each panel: (title, categories, rows). Each row is
+# [Measured, Theta_min, Theta_mean, Theta_max, Theta_mock] for one category.
+PANELS = [
+    ("(a) MILC (FP32)", ["A40", "RTX8000"], [
+        [1951, 1588, 1564, 1564, 1564],
+        [2040, 2636, 1617, 1617, 1617],
+    ]),
+    ("(b) LAMMPS (FP32)", ["A40", "RTX8000"], [
+        [970,1401,855,626,626],
+        [1429, 2365, 1071, 709, 708],
+    ]),
+]
+
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("csvs", nargs="+", type=Path,
-                   help="One CSV per panel (each needs a 'category' column).")
-    p.add_argument("-t", "--titles", nargs="+", default=None,
-                   help="Panel titles, one per CSV, e.g. '(a) MILC' '(b) LAMMPS'.")
-    p.add_argument("-o", "--output", type=Path, default=Path("runtime_pair.pdf"))
-    p.add_argument("-e", "--exclude", action="append", default=None, metavar="CATEGORY",
-                   help="Category to exclude; repeatable. (default: A100-40G)")
+    p.add_argument("-o", "--output", type=Path, default=Path("runtime_pair.png"))
     p.add_argument("--height", type=float, default=1.7, help="Figure height in inches.")
     p.add_argument("--no-sharey", action="store_true", help="Give each panel its own y axis.")
     return p.parse_args()
-
-
-def load_data(csv_path, excluded):
-    df = pd.read_csv(csv_path)
-    if "category" not in df.columns:
-        raise SystemExit(f"{csv_path}: missing required 'category' column")
-    categories = [c for c in dict.fromkeys(df["category"]) if c not in excluded]
-    if not categories:
-        raise SystemExit(f"{csv_path}: no categories left after exclusions")
-    value_cols = [c for c in df.columns if c != "category"]
-    data = np.array([
-        df[df["category"] == c][value_cols].mean(axis=0).round().astype(int).values
-        for c in categories
-    ])
-    return categories, data
 
 
 def draw_panel(ax, categories, data, title):
@@ -80,23 +73,19 @@ def draw_panel(ax, categories, data, title):
 
 def main():
     args = parse_args()
-    excluded = set(args.exclude) if args.exclude is not None else {"A100-40G"}
-    titles = args.titles or [p.stem for p in args.csvs]
-    if len(titles) != len(args.csvs):
-        raise SystemExit("--titles must have one entry per CSV")
 
     plt.rcParams.update({"hatch.linewidth": 0.6, "font.size": 7,
                          "pdf.fonttype": 42, "ps.fonttype": 42})
 
-    panels = [load_data(p, excluded) for p in args.csvs]
+    panels = [(title, cats, np.array(rows, dtype=float)) for title, cats, rows in PANELS]
     fig, axes = plt.subplots(1, len(panels), figsize=(COLUMN_WIDTH_IN, args.height),
                              sharey=not args.no_sharey, squeeze=False)
     axes = axes[0]
 
-    for ax, (cats, data), title in zip(axes, panels, titles):
+    for ax, (title, cats, data) in zip(axes, panels):
         draw_panel(ax, cats, data, title)
 
-    ymax = max(d.max() for _, d in panels)
+    ymax = max(d.max() for _, _, d in panels)
     for ax in axes:
         ax.set_ylim(0, ymax * 1.4)
     axes[0].set_ylabel("Runtime (s)", fontsize=7)
@@ -107,7 +96,7 @@ def main():
                handletextpad=0.4, bbox_to_anchor=(0.5, 1.0))
     fig.tight_layout(pad=0.2, w_pad=0.4, rect=(0, 0, 1, 0.88))
 
-    fig.savefig(args.output, bbox_inches="tight", pad_inches=0.01, dpi=300)
+    fig.savefig(args.output, bbox_inches="tight", pad_inches=0.01, dpi=300, format="png")
     plt.close(fig)
     print(f"Wrote {args.output}")
 
