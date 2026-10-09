@@ -40,8 +40,11 @@ def effective_tensor_peak(tf_weights: dict[str, float], gpu: GPU) -> float:
     for p, w in tf_weights.items():
         if w == 0.0:
             continue
-        denom += w / gpu.get_specs(p)
-    
+        peak = gpu.get_specs(p)
+        if peak == 0.0:
+            return 0.0  # no way to execute this precision at all
+        denom += w / peak
+
     return 1.0 / denom if denom > 0.0 else 0.0
 
 

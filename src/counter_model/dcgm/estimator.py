@@ -82,6 +82,7 @@ class SingleGpuEstimator(BaseEstimator):
                 mv_gract_norm["fp64a_gract"],
                 mv_gract_norm["fp32a_gract"],
                 mv_gract_norm["fp16a_gract"],
+                self.ref_gpu,
             )
 
             tf_ref = effective_tensor_peak(tf_weights, self.ref_gpu)  # β_tensor^ref
