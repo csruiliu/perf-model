@@ -1,5 +1,5 @@
-from counter_model.dcgm.data_classes import MetricValues, TimeFraction, TimeWindow
-from counter_model.hw_config.hw_specs import GPU
+from dcgm_model.data_classes import MetricValues, TimeFraction, TimeWindow
+from dcgm_model.hw_specs import GPU
 
 
 class TimeAggregator:

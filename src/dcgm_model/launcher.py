@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from counter_model.dcgm.dispatcher import Dispatcher
+from dcgm_model.dispatcher import Dispatcher
 
 
 # ============================================================================

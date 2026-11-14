@@ -7,8 +7,8 @@ from pathlib import Path
 
 import numpy as np
 
-from counter_model.hw_config.hw_specs import Host
-from counter_model.hw_config.pm_config import LATENCY_TABLES
+from cxi_model.hw_specs import Host
+from cxi_model.pm_config import LATENCY_TABLES
 
 
 def parse_osu_benchmark(filepath: str | Path) -> tuple[np.ndarray, np.ndarray]:

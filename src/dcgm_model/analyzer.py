@@ -4,8 +4,8 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import pandas as pd
 
-from counter_model.dcgm.estimator import SingleGpuEstimator
-from counter_model.dcgm.profiler import SingleGpuProfiler
+from dcgm_model.estimator import SingleGpuEstimator
+from dcgm_model.profiler import SingleGpuProfiler
 
 
 class SystemWideAnalyzer:

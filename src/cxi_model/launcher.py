@@ -7,17 +7,17 @@ Full pipeline for the network time model.
 import argparse
 from pathlib import Path
 
-from counter_model.cxi.constants import MSG_SIZE_SETS
-from counter_model.cxi.job_parser import load_counters_single_job
-from counter_model.cxi.matrix_builder import build_matrix_a, validate_matrix_a
-from counter_model.cxi.solver import print_solution_summary, solve_global, validate_solution
-from counter_model.cxi.time_estimator import (
+from cxi_model.constants import MSG_SIZE_SETS
+from cxi_model.hw_specs import HostSpec
+from cxi_model.job_parser import load_counters_single_job
+from cxi_model.matrix_builder import build_matrix_a, validate_matrix_a
+from cxi_model.pm_config import LATENCY_TABLES
+from cxi_model.solver import print_solution_summary, solve_global, validate_solution
+from cxi_model.time_estimator import (
     build_latency_model_from_config,
     build_latency_model_from_file,
     time_estimation,
 )
-from counter_model.hw_config.hw_specs import HostSpec
-from counter_model.hw_config.pm_config import LATENCY_TABLES
 
 
 def main():

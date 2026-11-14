@@ -1,7 +1,7 @@
 import numpy as np
 
-from counter_model.dcgm.constants import GPU_MIN_INTENSITY_THRESHOLD
-from counter_model.hw_config.hw_specs import GPU, Host
+from dcgm_model.constants import GPU_MIN_INTENSITY_THRESHOLD
+from dcgm_model.hw_specs import GPU, Host
 
 
 def get_tf_weights(fp64a: float, fp32a: float, fp16a: float, threshold=0.01) -> dict[str, float]:

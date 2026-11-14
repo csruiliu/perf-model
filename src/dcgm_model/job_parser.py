@@ -3,7 +3,7 @@ import re
 
 import pandas as pd
 
-from counter_model.dcgm.constants import (
+from dcgm_model.constants import (
     DCGM_COUNTERS_MAP,
     GPU_ACTIVE_THRESHOLD_METRIC,
     GPU_INTENSIVE_MIN_ACTIVE_FRACTION,

@@ -3,10 +3,10 @@ from abc import ABC, abstractmethod
 
 import pandas as pd
 
-from counter_model.dcgm.data_classes import MetricValues
-from counter_model.dcgm.scaler import get_tf_weights
-from counter_model.dcgm.time_aggregator import TimeAggregator
-from counter_model.hw_config.hw_specs import GPU
+from dcgm_model.data_classes import MetricValues
+from dcgm_model.hw_specs import GPU
+from dcgm_model.scaler import get_tf_weights
+from dcgm_model.time_aggregator import TimeAggregator
 
 
 class BaseProfiler(ABC):

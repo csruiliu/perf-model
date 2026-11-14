@@ -1,9 +1,9 @@
 import argparse
 
-from counter_model.dcgm.analyzer import SystemWideAnalyzer
-from counter_model.dcgm.estimator import SingleGpuEstimator
-from counter_model.dcgm.job_parser import JobParser
-from counter_model.dcgm.profiler import SingleGpuProfiler
+from dcgm_model.analyzer import SystemWideAnalyzer
+from dcgm_model.estimator import SingleGpuEstimator
+from dcgm_model.job_parser import JobParser
+from dcgm_model.profiler import SingleGpuProfiler
 
 
 class Dispatcher:
