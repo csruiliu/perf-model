@@ -19,7 +19,7 @@ One exmaple to quickly run the DCGM-based model using the collected counters of 
 
 ```bash
 # in the root folder
-python3 -m counter_model.dcgm.launcher \
+python3 -m dcgm_model \
     -job_mode single \
     --num_gpu 1 \
     --dcgm_input <dcgm_out_file> \
@@ -37,7 +37,7 @@ One exmaple to quickly run the CXI-based model using the collected counters of L
 
 ```bash
 # in the root folder
-python3 -m counter_model.cxi.modeling_cxi \
+python3 -m cxi_model \
     --counter_dir=<counter_file_folder> \
     --msg_set fine \
     -rh Perlmutter
