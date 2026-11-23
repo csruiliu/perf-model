@@ -36,7 +36,6 @@ def parse_arguments() -> argparse.Namespace:
         choices=["single", "multi"],
         help="Single-job or multi-job",
     )
-    parser.add_argument("--num_gpu", type=int, required=True, help="[multi-gpu] Number of GPUs")
 
     # --- shared ---
     parser.add_argument(
@@ -59,9 +58,6 @@ def parse_arguments() -> argparse.Namespace:
         help="same: ref and tgt hosts use the same cores. all: ref and tgt hosts use all cores, which are not always the same.",
     )
 
-    # --- for multi-gpu ---
-    parser.add_argument("--agg_interval_ms", type=int, help="[Multi-GPU] Aggregation interval (ms)")
-
     # --- for multi jobs ---
     parser.add_argument("--agg_results_dir", type=str, help="[Multi-GPU] Aggregated results output")
     parser.add_argument("--max_workers", type=int, default=1)
@@ -74,8 +70,6 @@ def parse_arguments() -> argparse.Namespace:
 def _validate(parser, args):
     """Requirements attach to an axis, not to a specific mode combination."""
     required = {}
-    if args.num_gpu > 1:
-        required.update({"agg_interval_ms": args.agg_interval_ms})
 
     # Multi-job single-GPU system-wide analysis needs a target GPU.
     # Target GPU is required for analysis

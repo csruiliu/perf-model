@@ -13,14 +13,10 @@ class Dispatcher:
         self.args = args
 
     def dispatch(self):
-        if self.args.job_mode == "single" and self.args.num_gpu == 1:
+        if self.args.job_mode == "single":
             self.single_job_single_gpu()
-        elif self.args.job_mode == "single" and self.args.num_gpu > 1:
-            self.single_job_multi_gpu()
-        elif self.args.job_mode == "multi" and self.args.num_gpu == 1:
+        elif self.args.job_mode == "multi":
             self.multi_job_single_gpu()
-        elif self.args.job_mode == "multi" and self.args.num_gpu > 1:
-            self.multi_job_multi_gpu()
         else:
             raise SystemExit(
                 f"Unsupported combination: jobs={self.args.job_mode}, gpus={self.args.num_gpu}"
@@ -38,9 +34,6 @@ class Dispatcher:
             tgt_estimator = SingleGpuEstimator(self.args)
             tgt_estimator.run(profiled_df, self.args, is_printout=True)
 
-    def single_job_multi_gpu(self):
-        pass
-
     def multi_job_single_gpu(self):
         job_parser = JobParser(self.args.dcgm_input)
         job_to_df = job_parser.parsing_multi_job(num_gpu=1)
@@ -48,5 +41,3 @@ class Dispatcher:
         analyzer = SystemWideAnalyzer(self.args)
         analyzer.run(job_to_df)
 
-    def multi_job_multi_gpu(self):
-        pass
