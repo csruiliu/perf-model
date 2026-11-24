@@ -20,14 +20,20 @@ def load_counters_single_job(counter_dir: str | Path) -> tuple[np.ndarray, list[
     """
     Load all hardware counters from the three-level results directory.
 
-    Auto-discovers node directories by finding any subdirectory
-    containing cxi0/counters.csv. All other files are ignored.
+    Auto-discovers every NIC directory matching <node>/cxi*/counters.csv.
+    Each NIC is one row of Y (NIC k in Sec. III-B). All other files are ignored.
 
     Parameters
     ----------
     counter_dir : str or Path
         Top-level directory named by SLURM job ID.
         Example: "/pscratch/.../results/OMB_12345678"
+
+    Returns
+    -------
+    vector_y      : (N, 2 * NUM_ALL_CNTRS) counter increments, one row per NIC
+    nic_name_list : "<node>/<cxiX>" labels in the same order as Y
+    nic_recv_msgs : L_k, received-message total per NIC (priority + overflow matches)
     """
     counter_dir = Path(counter_dir)
 
@@ -38,68 +44,55 @@ def load_counters_single_job(counter_dir: str | Path) -> tuple[np.ndarray, list[
 
     print(f"Loading counters from: {counter_dir}")
 
-    # find and sort all subdirs inside counter_dir that contain a cxi0/counters.csv file.
-    node_dirs = sorted(
-        [d for d in counter_dir.iterdir() if d.is_dir() and (d / "cxi0" / "counters.csv").exists()]
-    )
+    # find and sort all <node>/cxi*/counters.csv files inside counter_dir
+    nic_files = sorted(f for f in counter_dir.glob("*/cxi*/counters.csv") if f.is_file())
 
-    if len(node_dirs) == 0:
+    if len(nic_files) == 0:
         raise FileNotFoundError(
             f"No node directories with counters.csv found under:\n"
             f"  {counter_dir}\n"
             f"Expected: {counter_dir}/<node_name>/cxi0/counters.csv"
         )
 
-    num_nodes = len(node_dirs)
+    num_nics = len(nic_files)
 
     # create Y vector with shape (num_nodes, 2 * NUM_ALL_CNTRS)
-    vector_y = np.zeros((num_nodes, 2 * NUM_ALL_CNTRS), dtype=np.float64)
-    # create list of node names in the same order as Y
-    node_name_list: list[str] = []
+    vector_y = np.zeros((num_nics, 2 * NUM_ALL_CNTRS), dtype=np.float64)
+    # create list of NIC names in the same order as Y
+    nic_name_list: list[str] = []
 
-    # Estimated sending and recving messages of each node
-    node_send_msgs: dict[str, int] = {}
-    node_recv_msgs: dict[str, int] = {}
+    # L_k: received-message total of each NIC.
+    # Send totals are not estimated here; the solver couples sends and receives
+    # through per-bin conservation across the job (Eq. 8).
+    nic_recv_msgs: dict[str, int] = {}
 
-    for node_idx, node_dir in enumerate(node_dirs):
-        node_name = node_dir.name
-        node_name_list.append(node_name)
+    for nic_idx, nic_file in enumerate(nic_files):
+        nic_name = f"{nic_file.parent.parent.name}/{nic_file.parent.name}"
+        nic_name_list.append(nic_name)
 
-        y_node, n_total = load_counters_single_node(node_dir / "cxi0" / "counters.csv")
-        vector_y[node_idx, :] = y_node
-        node_recv_msgs[node_name] = n_total
+        y_nic, n_total = load_counters_single_node(nic_file)
+        vector_y[nic_idx, :] = y_nic
+        nic_recv_msgs[nic_name] = n_total
 
-        print(f"  Loaded [{node_idx + 1}/{num_nodes}] {node_name}  (n_total={n_total})")
-
-    for node_name in node_name_list:
-        if num_nodes > 1:
-            other_totals = [
-                t for key, t in node_recv_msgs.items() if key != node_name and t is not None
-            ]
-            if len(other_totals) > 0:
-                # avg num of recv msgs of other nodes as the estimated num of sent msgs
-                n_send = sum(other_totals) / (num_nodes - 1)
-            else:
-                raise ValueError("Cannot get n_send using other node reeciving messages!")
-
-            node_send_msgs[node_name] = n_send
+        print(f"  Loaded [{nic_idx + 1}/{num_nics}] {nic_name}  (L_k={n_total})")
 
     # check loaded data for common issues before returning
-    _validate(vector_y, node_name_list, node_send_msgs, node_recv_msgs)
+    _validate(vector_y, nic_name_list, nic_recv_msgs)
 
     print(
-        f"\nDone. Y shape: {vector_y.shape}  (N={num_nodes} nodes, each has {2 * NUM_ALL_CNTRS} counters)"
+        f"\nDone. Y shape: {vector_y.shape}  "
+        f"(N={num_nics} NICs, each has {2 * NUM_ALL_CNTRS} counters)"
     )
 
-    return vector_y, node_name_list, node_send_msgs, node_recv_msgs
+    return vector_y, nic_name_list, nic_recv_msgs
 
 
 # =============================================================
 # Single node loader
 # =============================================================
-def load_counters_single_node(counter_file: Path) -> np.ndarray:
+def load_counters_single_node(counter_file: Path) -> tuple[np.ndarray, int]:
     """
-    Load counters.csv for a single node.
+    Load counters.csv for a single NIC.
 
     counters.csv is the delta (after - before).
     It has three columns:
@@ -107,7 +100,8 @@ def load_counters_single_node(counter_file: Path) -> np.ndarray:
 
     Returns
     -------
-    y_node : np.ndarray, ordered counter vector y for single node following ALL_CNTRS.
+    y_node  : np.ndarray, ordered counter vector y for a single NIC following ALL_CNTRS.
+    n_total : int, received-message total L_k (priority + overflow list matches).
     """
     df = pd.read_csv(counter_file)
 
@@ -158,20 +152,17 @@ def load_counters_single_node(counter_file: Path) -> np.ndarray:
 def _validate(
     vector_y: np.ndarray,
     node_names: list[str],
-    node_send_msg_counts: dict[str, int],
     node_recv_msg_counts: dict[str, int],
 ) -> None:
     """Check loaded counter data for common issues."""
     if not node_names:
         raise ValueError("node_names is empty!")
 
-    if not node_send_msg_counts or not node_recv_msg_counts:
-        raise ValueError("node_send_msg_counts or node_recv_msg_counts is empty!")
+    if not node_recv_msg_counts:
+        raise ValueError("node_recv_msg_counts is empty!")
 
-    if set(node_send_msg_counts) != set(node_names) or set(node_recv_msg_counts) != set(node_names):
-        raise ValueError(
-            "node_send_msg_counts or node_recv_msg_counts contains node names not present in the loaded data"
-        )
+    if set(node_recv_msg_counts) != set(node_names):
+        raise ValueError("node_recv_msg_counts contains NIC names not present in the loaded data")
 
     num_nodes = vector_y.shape[0]
     print("\n  Validating...")

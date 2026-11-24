@@ -181,3 +181,20 @@ SUB_MTU_MAP: list[tuple[int, list[int]]] = [
     (1994, [0, 5]),
     (2048, [0, 6]),
 ]
+
+
+# Solvers tried in order for the convex fit
+QP_SOLVER_LIST = ["CLARABEL", "SCS", "OSQP"]
+
+# Stage 2 treats a fitted counter as equal to y_hat* when
+#   |(A x_k)_h - y_hat*_{k,h}| <= max(FIT_ABS_TOL, rel_tol * y_hat*_{k,h}).
+# rel_tol is tried from loose to tight; the first support that passes the
+# objective check below is kept (looser tolerances can only give fewer bins).
+FIT_ABS_TOL: float = 0.5  # half a counter increment
+FIT_REL_TOL_LADDER: tuple[float, ...] = (1e-4, 1e-5, 1e-6, 1e-7)
+
+# A support is accepted if refitting Eq. (8) on it reaches the stage-1 optimum
+# within OBJ_ABS_TOL + OBJ_REL_TOL * f*. Because y_hat* is unique, such a refit
+# reproduces A x_k = y_hat*_k up to solver precision.
+OBJ_ABS_TOL: float = 1e-2
+OBJ_REL_TOL: float = 1e-3

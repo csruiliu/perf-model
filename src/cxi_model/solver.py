@@ -10,9 +10,20 @@ import warnings
 
 import cvxpy as cp
 import numpy as np
-from scipy.optimize import nnls
+from scipy.optimize import Bounds, LinearConstraint, milp
+from scipy.sparse import csr_matrix, hstack, kron
+from scipy.sparse import eye as sp_eye
 
-from cxi_model.constants import COUNTER_GROUPS, RX_HIST_SLICE, TX_HIST_SLICE
+from cxi_model.constants import (
+    COUNTER_GROUPS,
+    FIT_ABS_TOL,
+    FIT_REL_TOL_LADDER,
+    OBJ_ABS_TOL,
+    OBJ_REL_TOL,
+    QP_SOLVER_LIST,
+    RX_HIST_SLICE,
+    TX_HIST_SLICE,
+)
 
 
 # =============================================================
@@ -21,330 +32,381 @@ from cxi_model.constants import COUNTER_GROUPS, RX_HIST_SLICE, TX_HIST_SLICE
 def solve_global(
     matrix_a: np.ndarray,
     vec_y: np.ndarray,
-    node_names: list[str],
+    nic_names: list[str],
     msg_size_sets: np.ndarray,
-    node_send_msgs: dict[str, int],
-    node_recv_msgs: dict[str, int],
-) -> tuple[np.ndarray, list[float]]:
+    nic_recv_msgs: dict[str, int],
+) -> np.ndarray:
+    """
+    Reconstruct send/recv message counts per size bin for every NIC of a job.
 
-    num_nodes, all_counters_txrx = vec_y.shape
+    Parameters
+    ----------
+    matrix_a : (H, 2M) signature matrix shared by all NICs
+    vec_y    : (N, H) observed counter increments, one row per NIC
+    nic_names : NIC labels in the same order as vec_y rows
+    msg_size_sets : (M,) representative message size per bin (ascending)
+    nic_recv_msgs : L_k, received-message total per NIC
+
+    Returns
+    -------
+    vec_x : (N, 2M) selected counts, [x_send | x_recv] per NIC
+    """
+    num_nics, all_counters_txrx = vec_y.shape
+    num_msg_sizes = matrix_a.shape[1] // 2
 
     if all_counters_txrx != matrix_a.shape[0]:
         raise ValueError(
-            f"Y has {all_counters_txrx} counters per node but A has {matrix_a.shape[0]} rows."
+            f"Y has {all_counters_txrx} counters per NIC but A has {matrix_a.shape[0]} rows."
         )
+    if num_msg_sizes != len(msg_size_sets):
+        raise ValueError(f"A has {matrix_a.shape[1]} columns but {len(msg_size_sets)} size bins.")
 
-    print(f"  A : {matrix_a.shape}   Y : {vec_y.shape}   X : ({num_nodes}, {matrix_a.shape[1]})\n")
+    print(f"  A : {matrix_a.shape}   Y : {vec_y.shape}   X : ({num_nics}, {matrix_a.shape[1]})\n")
 
-    vec_x = np.zeros((num_nodes, matrix_a.shape[1]))
-    lambda_used_list = []
+    recv_totals = np.array([float(nic_recv_msgs[name]) for name in nic_names])
 
-    # 1. Compute baseline packet weights using the ORIGINAL, unscaled matrix
-    packet_weights = np.sum(matrix_a, axis=0)
-    num_msg_sizes = matrix_a.shape[1] // 2
-
-    for node_idx in range(num_nodes):
-        node_name = node_names[node_idx]
-
-        print(f"--- Node [{node_idx + 1}/{num_nodes}]: {node_name} ---")
-        y_nid = vec_y[node_idx, :]
-
-        # 2. Compute Poisson variance weights for this node
-        # We add 1.0 to avoid division by zero on empty counters
-        row_scales = 1.0 / np.sqrt(np.maximum(y_nid, 1.0))
-
-        # 3. Scale the matrix and target vector
-        matrix_a_scaled = matrix_a * row_scales[:, np.newaxis]
-        y_scaled = y_nid * row_scales
-
-        print("  Auto-tuning lambda (residual tolerance):")
-        lam = _find_lambda_cv(
-            matrix_a_scaled,
-            y_scaled,
-            packet_weights,
-            num_msg_sizes,
-            n_send=node_send_msgs[node_name],
-            n_recv=node_recv_msgs[node_name],
-            max_extensions=5,
-        )
-        # Solve the equation using the chosen lambda and all the data
-        x_nid = _solve_constrained_optimization(
-            matrix_a_scaled,
-            y_scaled,
-            packet_weights,
-            lam,
-            num_msg_sizes=num_msg_sizes,
-            n_send=node_send_msgs[node_name],
-            n_recv=node_recv_msgs[node_name],
-        )
-        vec_x[node_idx, :] = x_nid
-        lambda_used_list.append(lam)
-
-        active_bins = int(np.sum(x_nid > 0.5))
-        # Print original unscaled residual for user visibility
-        residual = np.linalg.norm(matrix_a @ x_nid - y_nid)
-        print(f"  lambda={lam:.3e}  active_bins={active_bins}  residual={residual:.2f}\n")
-
-    vec_x_merged = _merge_indistinguishable_bins(vec_x, msg_size_sets)
-
-    return vec_x_merged, lambda_used_list
-
-
-# =============================================================
-# Lambda selection via Leave-One-Counter-Out Cross Validation
-# =============================================================
-def _find_lambda_cv(
-    matrix_a: np.ndarray,
-    vec_y: np.ndarray,
-    packet_weights: np.ndarray,
-    num_msg_sizes: int,
-    n_send: float,
-    n_recv: int,
-    max_extensions: int = 5,
-) -> float:
-    m = len(vec_y)
-    lam_n_points = 50
-    extend_factor = 10.0
-
-    # consider lam_min as lam_lo and lam_balance as lam_hi
-    lam_lo, lam_hi = _compute_lambda_baseline(matrix_a, vec_y, packet_weights)
-    print(f"    lam_min (KKT transition) = {lam_lo:.3e}")
-    print(f"    lam_balance (NNLS)       = {lam_hi:.3e}")
-
-    all_lambdas, all_cv_errors = [], []
-
-    for attempt in range(max_extensions + 1):
-        lambda_grid = np.logspace(np.log10(lam_lo), np.log10(lam_hi), lam_n_points)
-
-        cv_errors = np.zeros(lam_n_points)
-        for i, lam in enumerate(lambda_grid):
-            fold_errors = np.zeros(m)
-            for k in range(m):
-                mask = np.ones(m, dtype=bool)
-                mask[k] = False
-                x_k = _solve_constrained_optimization(
-                    matrix_a[mask, :],
-                    vec_y[mask],
-                    packet_weights,
-                    lam,
-                    num_msg_sizes=num_msg_sizes,
-                    n_recv=n_recv,
-                    n_send=n_send,
-                )
-                fold_errors[k] = (matrix_a[k, :] @ x_k - vec_y[k]) ** 2
-            cv_errors[i] = np.mean(fold_errors)
-
-        all_lambdas.extend(lambda_grid.tolist())
-        all_cv_errors.extend(cv_errors.tolist())
-
-        local_best_idx = int(np.argmin(cv_errors))
-        at_lower = local_best_idx == 0
-        at_upper = local_best_idx == lam_n_points - 1
-
-        if not at_lower and not at_upper:
-            break
-
-        if attempt < max_extensions:
-            if at_lower:
-                lam_hi, lam_lo = lam_lo, lam_lo / extend_factor
-            else:
-                lam_lo, lam_hi = lam_hi, lam_hi * extend_factor
-
-    all_lambdas_arr = np.array(all_lambdas)
-    all_cv_errors_arr = np.array(all_cv_errors)
-    global_best_idx = int(np.argmin(all_cv_errors_arr))
-
-    return float(all_lambdas_arr[global_best_idx])
-
-
-# =============================================================
-# Mathematically grounded starting point
-# =============================================================
-def _compute_lambda_baseline(
-    matrix_a: np.ndarray, vec_y: np.ndarray, packet_weights: np.ndarray
-) -> tuple[float, float]:
-    # Calculate min lambda according to the equation, always 0.5
-    col_sums_unscaled = np.maximum(packet_weights, 1e-12)  # guard zero columns
-    lam_min = float(np.min(packet_weights / (2.0 * col_sums_unscaled)))
-
-    # ------------------------------------------------------------------
-    # lam_balance = W^T X_nnls / sum_i (A[i,:] X_nnls - Y[i])^2 / Y[i]
-    #
-    # Solved on the scaled system since:
-    #   sum_i (A_scaled[i,:] X - y_scaled[i])^2
-    #       == sum_i (A[i,:] X - Y[i])^2 / Y[i]
-    # ------------------------------------------------------------------
-    x_nnls, _ = nnls(matrix_a, vec_y)
-
-    # Poisson-weighted residual via scaled equivalence
-    poisson_residual_sq = float(np.sum((matrix_a @ x_nnls - vec_y) ** 2))
-    l1_cost = float(packet_weights @ x_nnls)
-
-    if poisson_residual_sq < 1e-12:
-        # Perfect fit — balance point is undefined; return a safe fallback
-        lam_balance = lam_min * 100.0
-    else:
-        lam_balance = l1_cost / poisson_residual_sq
-
-    return lam_min, lam_balance
-
-
-# =============================================================
-# Core constrained optimization solver
-# =============================================================
-def _solve_constrained_optimization(
-    matrix_a: np.ndarray,
-    vec_y: np.ndarray,
-    packet_weights: np.ndarray,
-    lam: float,
-    num_msg_sizes: int,
-    n_send: float,
-    n_recv: int,
-) -> np.ndarray:
-    """
-    Solve the regularised non-negative least-squares problem.
-    """
-    n = matrix_a.shape[1]
-    solver_list = ["CLARABEL", "SCS", "ECOS", "OSQP", "CVXOPT"]
-
-    vec_x = cp.Variable(n, nonneg=True)
-
-    objective = cp.Minimize(
-        (packet_weights @ vec_x) + lam * cp.sum_squares(matrix_a @ vec_x - vec_y)
+    # ----------------------------------------------------------
+    # Stage 1 — joint weighted least squares (Eq. 8)
+    # ----------------------------------------------------------
+    print("  Stage 1: joint weighted least-squares fit (Eq. 8)")
+    x_fit, obj_fit = _solve_joint_fit(matrix_a, vec_y, recv_totals, num_msg_sizes)
+    y_hat_star = x_fit @ matrix_a.T  # unique optimal fitted counters, one row per NIC
+    print(
+        f"    objective = {obj_fit:.6e}   bins with mass = {_count_used_bins(x_fit, num_msg_sizes)}"
     )
 
-    # Create constraint using the estimated total send and recv messages
-    constraints: list = []
-    if n_recv is not None:
-        constraints.append(cp.sum(vec_x[num_msg_sizes:]) == n_recv)
-    if n_send is not None:
-        constraints.append(cp.sum(vec_x[:num_msg_sizes]) == n_send)
+    # ----------------------------------------------------------
+    # Stage 2 — fewest distinct bins among solutions with A x_k = y_hat*_k
+    # ----------------------------------------------------------
+    print("  Stage 2: minimum-bin selection among optimal fits")
+    obj_limit = obj_fit + OBJ_ABS_TOL + OBJ_REL_TOL * obj_fit
+    vec_x = None
+
+    # (a) MILP proposal: global minimum number of bins, verified by refitting.
+    #     At large counter magnitudes the MILP can be numerically unreliable
+    #     (one-count precision on ~1e9 totals), so every proposal is checked.
+    for rel_tol in FIT_REL_TOL_LADDER:
+        support = _select_min_bins(
+            matrix_a, y_hat_star, recv_totals, num_msg_sizes, rel_tol=rel_tol
+        )
+        if support is None:
+            print(f"    rel_tol={rel_tol:.0e}: no feasible support")
+            continue
+
+        # Refit on the candidate support and check that it is still optimal.
+        x_restricted, obj_restricted = _solve_joint_fit(
+            matrix_a, vec_y, recv_totals, num_msg_sizes, support=support
+        )
+        accepted = obj_restricted <= obj_limit
+        print(
+            f"    rel_tol={rel_tol:.0e}: {int(support.sum())} bins, refit objective = "
+            f"{obj_restricted:.6e}  [{'accepted' if accepted else 'rejected'}]"
+        )
+        if accepted:
+            vec_x = x_restricted
+            break
+
+    if vec_x is None:
+        print("    no verified MILP support; starting elimination from the stage-1 fit")
+        vec_x, support = x_fit, _used_bins_mask(x_fit, num_msg_sizes)
+
+    # Backward elimination: drop further bins while the optimum is preserved.
+    # Guarantees an inclusion-minimal support even when the MILP is unreliable.
+    vec_x, support = _prune_bins(
+        matrix_a, vec_y, recv_totals, num_msg_sizes, vec_x, support, obj_limit
+    )
+    sizes = [int(msg_size_sets[m]) for m in np.flatnonzero(support)]
+    print(f"    final support: {int(support.sum())} bins: {sizes} B")
+
+    for nic_idx, name in enumerate(nic_names):
+        x_nic = vec_x[nic_idx, :]
+        active_bins = int(np.sum(x_nic > 0.5))
+        residual = np.linalg.norm(matrix_a @ x_nic - vec_y[nic_idx, :])
+        print(f"    {name:<24} active_bins={active_bins}  residual={residual:.2f}")
+    print()
+
+    return vec_x
+
+
+# =============================================================
+# Stage 1 — joint constrained weighted least squares
+# =============================================================
+def _solve_joint_fit(
+    matrix_a: np.ndarray,
+    vec_y: np.ndarray,
+    recv_totals: np.ndarray,
+    num_msg_sizes: int,
+    support: np.ndarray | None = None,
+) -> tuple[np.ndarray, float]:
+    """
+    Solve Eq. (8) for all NICs jointly.
+
+    If `support` (bool, shape (M,)) is given, bins outside it are fixed to zero
+    in both directions for every NIC.
+
+    Returns the message counts x (N, 2M) and the objective value
+    sum_k sum_h [(A x_k)_h - y_{k,h}]^2 / max(y_{k,h}, 1).
+
+    Numerics: counters can reach ~1e9 while a zero counter must be matched to
+    within one count, so the problem is solved in packet units,
+        u_{k,j} = pkts_per_msg_j * x_{k,j} / count_scale,
+    which keeps every column of the scaled signature matrix in [0, 1].
+    The minimizer is unchanged.
+    """
+    num_nics = vec_y.shape[0]
+    n_cols = matrix_a.shape[1]
+
+    pkts_per_msg = np.maximum(np.sum(matrix_a, axis=0), 1.0)  # send and recv columns of a bin match
+    count_scale = max(1.0, float(np.max(vec_y)))
+    matrix_a_pkt = matrix_a / pkts_per_msg
+    inv_send = 1.0 / pkts_per_msg[:num_msg_sizes]
+    inv_recv = 1.0 / pkts_per_msg[num_msg_sizes:]
+
+    # sqrt of the Eq. (8) weights, in scaled units
+    row_weights = count_scale / np.sqrt(np.maximum(vec_y, 1.0))
+
+    vec_u = cp.Variable((num_nics, n_cols), nonneg=True)
+    msgs_send = cp.multiply(vec_u[:, :num_msg_sizes], inv_send)  # x_send / count_scale
+    msgs_recv = cp.multiply(vec_u[:, num_msg_sizes:], inv_recv)  # x_recv / count_scale
+
+    # Row k of (U A_pkt^T) is (A x_k) / count_scale, so each entry of
+    # weighted_residual is ((A x_k)_h - y_{k,h}) / sqrt(max(y_{k,h}, 1)) as in Eq. (8)
+    weighted_residual = cp.multiply(row_weights, vec_u @ matrix_a_pkt.T - vec_y / count_scale)
+    objective = cp.Minimize(cp.sum_squares(weighted_residual))
+
+    constraints: list = [
+        cp.sum(msgs_recv, axis=1) == recv_totals / count_scale,  # receive totals anchor each NIC
+        cp.sum(msgs_send, axis=0) == cp.sum(msgs_recv, axis=0),  # per-bin job-wide conservation
+    ]
+    if support is not None:
+        off = np.flatnonzero(~support)
+        if off.size > 0:
+            constraints.append(vec_u[:, off] == 0)
+            constraints.append(vec_u[:, num_msg_sizes + off] == 0)
 
     prob = cp.Problem(objective, constraints)
 
-    for solver in solver_list:
+    for solver in QP_SOLVER_LIST:
         try:
-            prob.solve(solver=solver, verbose=False)
-            if vec_x.value is not None and prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
+            prob.solve(solver=solver, verbose=False, canon_backend=cp.SCIPY_CANON_BACKEND)
+            if vec_u.value is not None and prob.status in (cp.OPTIMAL, cp.OPTIMAL_INACCURATE):
                 break
         except cp.SolverError:
             continue
 
-    if vec_x.value is None:
+    if vec_u.value is None:
         warnings.warn("All solvers failed. Returning zeros.", stacklevel=2)
-        return np.zeros(n)
+        return np.zeros((num_nics, n_cols)), float("inf")
 
-    return vec_x.value
+    # back to message counts; clip solver round-off below zero
+    x_val = np.maximum(vec_u.value, 0.0) * count_scale / pkts_per_msg
+    obj_val = float(np.sum((x_val @ matrix_a.T - vec_y) ** 2 / np.maximum(vec_y, 1.0)))
+    return x_val, obj_val
 
 
-def _merge_indistinguishable_bins(
-    vec_x: np.ndarray, msg_size_sets: np.ndarray
+# =============================================================
+# Stage 2 — fewest distinct message-size bins (MILP)
+# =============================================================
+def _select_min_bins(
+    matrix_a: np.ndarray,
+    y_hat_star: np.ndarray,
+    recv_totals: np.ndarray,
+    num_msg_sizes: int,
+    rel_tol: float,
+    abs_tol: float = FIT_ABS_TOL,
+    time_limit: float = 300.0,
+) -> np.ndarray | None:
+    """
+    Find the smallest set of size bins that reproduces y_hat* for every NIC.
+
+    Variables: x (N * 2M, continuous >= 0, NIC-major) and z (M, binary),
+    where z_m = 1 if bin m is used by any NIC in either direction.
+    Because of per-bin conservation, a bin used for receiving anywhere in the
+    job is also used for sending somewhere, so one indicator per bin suffices.
+
+    Ties between equally small supports (e.g. bins with identical signature
+    columns) are broken in favor of smaller message sizes.
+
+    Returns a bool mask of shape (M,), or None if the MILP fails.
+    """
+    num_nics, num_cntrs = y_hat_star.shape
+    n_cols = 2 * num_msg_sizes
+    n_x = num_nics * n_cols
+    eye_n = sp_eye(num_nics, format="csr")
+
+    # Normalize message counts so the big-M bounds below are <= 1
+    count_scale = max(1.0, float(np.sum(recv_totals)))
+    y_tilde = y_hat_star / count_scale
+    l_tilde = recv_totals / count_scale
+
+    # --- A x_k within tolerance of y_hat*_k for every NIC ---
+    a_block = kron(eye_n, csr_matrix(matrix_a), format="csr")  # (N*H, N*2M)
+    y_flat = y_tilde.ravel()
+    tol = np.maximum(abs_tol / count_scale, rel_tol * np.abs(y_flat))
+    fit_con = LinearConstraint(
+        hstack([a_block, csr_matrix((num_nics * num_cntrs, num_msg_sizes))]),
+        y_flat - tol,
+        y_flat + tol,
+    )
+
+    # --- sum_m x^recv_{k,m} = L_k ---
+    recv_row = np.concatenate([np.zeros(num_msg_sizes), np.ones(num_msg_sizes)])
+    recv_con = LinearConstraint(
+        hstack([kron(eye_n, csr_matrix(recv_row)), csr_matrix((num_nics, num_msg_sizes))]),
+        l_tilde,
+        l_tilde,
+    )
+
+    # --- sum_k x^send_{k,m} - sum_k x^recv_{k,m} = 0 ---
+    eye_m = sp_eye(num_msg_sizes, format="csr")
+    per_nic = hstack([eye_m, -eye_m])
+    cons_con = LinearConstraint(
+        hstack([kron(np.ones((1, num_nics)), per_nic), csr_matrix((num_msg_sizes, num_msg_sizes))]),
+        0.0,
+        0.0,
+    )
+
+    # --- x^d_{k,m} <= U_{k,d} * z_m  (big-M link) ---
+    # recv counts are bounded by L_k; send counts by the job-wide receive total.
+    upper = np.concatenate(
+        [
+            np.concatenate([np.full(num_msg_sizes, l_tilde.sum()), np.full(num_msg_sizes, l_k)])
+            for l_k in l_tilde
+        ]
+    )
+    bin_of_col = np.tile(np.arange(num_msg_sizes), 2 * num_nics)  # bin index of each x entry
+    link = csr_matrix((-upper, (np.arange(n_x), bin_of_col)), shape=(n_x, num_msg_sizes))
+    link_con = LinearConstraint(hstack([sp_eye(n_x, format="csr"), link]), -np.inf, 0.0)
+
+    # --- objective: number of bins, plus a tie-break (< 1 in total) toward small sizes ---
+    tie_break = np.arange(num_msg_sizes) / (num_msg_sizes * (num_msg_sizes + 1.0))
+    cost = np.concatenate([np.zeros(n_x), 1.0 + tie_break])
+
+    integrality = np.concatenate([np.zeros(n_x), np.ones(num_msg_sizes)])
+    bounds = Bounds(
+        np.zeros(n_x + num_msg_sizes),
+        np.concatenate([upper, np.ones(num_msg_sizes)]),
+    )
+
+    res = milp(
+        cost,
+        constraints=[fit_con, recv_con, cons_con, link_con],
+        integrality=integrality,
+        bounds=bounds,
+        options={"time_limit": time_limit, "disp": False},
+    )
+
+    if res.x is None:
+        return None
+    if res.status != 0:
+        warnings.warn(f"MILP not proven optimal ({res.message}); using best found.", stacklevel=2)
+
+    return np.round(res.x[n_x:]).astype(bool)
+
+
+# =============================================================
+# Stage 2 (fallback/refinement) — backward elimination of bins
+# =============================================================
+def _prune_bins(
+    matrix_a: np.ndarray,
+    vec_y: np.ndarray,
+    recv_totals: np.ndarray,
+    num_msg_sizes: int,
+    vec_x: np.ndarray,
+    support: np.ndarray,
+    obj_limit: float,
 ) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Remove bins from `support` one at a time while refitting Eq. (8) on the
+    remaining bins stays within `obj_limit`.
 
-    if vec_x.shape[1] % 2 != 0:
-        raise ValueError(f"vec_x has {vec_x.shape[1]} columns — expected an even number.")
+    Bins with the least job-wide mass are tried first; among equal masses
+    (e.g. bins with identical signature columns) the larger size is dropped
+    first, so the smaller representative is kept. Every accepted removal is
+    verified, so the result is an optimal fit on an inclusion-minimal support.
+    """
+    support = support.copy()
 
-    num_msg_sizes = vec_x.shape[1] // 2
-    vec_x_merged = vec_x.copy()
-    merged_msg_sizes = msg_size_sets.copy()
+    # First, drop in one shot every bin carrying less than half a message job-wide.
+    tiny = support & (_bin_mass(vec_x, num_msg_sizes) < 0.5)
+    if tiny.any() and tiny.sum() < support.sum():
+        trial = support & ~tiny
+        x_trial, obj_trial = _solve_joint_fit(
+            matrix_a, vec_y, recv_totals, num_msg_sizes, support=trial
+        )
+        if obj_trial <= obj_limit:
+            support, vec_x = trial, x_trial
+            print(f"    dropped {int(tiny.sum())} near-empty bins")
 
-    for half_start, half_name in [(0, "send"), (num_msg_sizes, "recv")]:
-        half = vec_x_merged[:, half_start : half_start + num_msg_sizes]
-
-        # Round to fixed precision so floating-point near-duplicates are treated
-        # as identical, shape (num_nodes, num_msg_sizes) -> use columns as signatures.
-        signatures = np.round(half, decimals=6)
-
-        assigned = np.zeros(num_msg_sizes, dtype=bool)
-
-        for j in range(num_msg_sizes):
-            if assigned[j]:
-                continue
-
-            # Find ALL other unassigned bins with the same value signature.
-            # Skip all-zero bins to avoid grouping empty bins together.
-            if np.all(signatures[:, j] == 0.0):
-                assigned[j] = True
-                continue
-
-            group = [
-                k
-                for k in range(num_msg_sizes)
-                if not assigned[k] and k != j and np.array_equal(signatures[:, j], signatures[:, k])
-            ]
-
-            if not group:
-                assigned[j] = True
-                continue
-
-            # All bins in the group including j; pick the one with the
-            # smallest message size as the representative.
-            full_group = [j] + group
-            rep = min(full_group, key=lambda k: msg_size_sets[k])
-            non_rep = [k for k in full_group if k != rep]
-
-            # Sum all mass onto the representative bin, zero out the rest.
-            total_mass = np.sum(half[:, full_group], axis=1)
-            half[:, full_group] = 0.0
-            half[:, rep] = total_mass
-
-            # Update labels so every group member carries the smallest size.
-            for k in non_rep:
-                merged_msg_sizes[k] = msg_size_sets[rep]
-
-            assigned[full_group] = True
-
-            print(
-                f"  [{half_name}] merged bins {full_group} "
-                f"({[int(msg_size_sets[k]) for k in full_group]}B) "
-                f"→ rep={int(msg_size_sets[rep])}B  "
-                f"mass={total_mass.tolist()}"
+    changed = True
+    while changed and support.sum() > 1:
+        changed = False
+        mass = _bin_mass(vec_x, num_msg_sizes)
+        scale = max(float(mass.sum()), 1.0)
+        candidates = sorted(np.flatnonzero(support), key=lambda m: (round(mass[m] / scale, 6), -m))
+        for m in candidates:
+            trial = support.copy()
+            trial[m] = False
+            x_trial, obj_trial = _solve_joint_fit(
+                matrix_a, vec_y, recv_totals, num_msg_sizes, support=trial
             )
+            if obj_trial <= obj_limit:
+                support, vec_x = trial, x_trial
+                changed = True
+                break  # masses changed; re-rank the remaining bins
 
-    return vec_x_merged
+    return vec_x, support
+
+
+def _bin_mass(vec_x: np.ndarray, num_msg_sizes: int) -> np.ndarray:
+    """Job-wide number of messages per size bin (send + recv)."""
+    return np.sum(vec_x[:, :num_msg_sizes] + vec_x[:, num_msg_sizes:], axis=0)
+
+
+def _used_bins_mask(vec_x: np.ndarray, num_msg_sizes: int, threshold: float = 0.5) -> np.ndarray:
+    """Bool mask of size bins with more than `threshold` messages anywhere in the job."""
+    used = (vec_x[:, :num_msg_sizes] > threshold) | (vec_x[:, num_msg_sizes:] > threshold)
+    return np.any(used, axis=0)
+
+
+def _count_used_bins(vec_x: np.ndarray, num_msg_sizes: int, threshold: float = 0.5) -> int:
+    """Number of size bins with more than `threshold` messages anywhere in the job."""
+    return int(np.sum(_used_bins_mask(vec_x, num_msg_sizes, threshold)))
 
 
 # =============================================================
 # Utility function to print solution summary
 # =============================================================
 def print_solution_summary(
-    node_names: list[str],
-    lambda_used: list[float],
+    nic_names: list[str],
     vec_x: np.ndarray,
     msg_size_sets: np.ndarray,
-    n_send: dict[str, float],
     n_recv: dict[str, int],
 ) -> None:
     """
-    Print a per-node summary of the MPI model solution.
+    Print a per-NIC summary of the reconstructed message-size distribution.
     """
     num_msg_sizes = vec_x.shape[1] // 2
 
     print("\n=== Solution Summary ===")
     header = (
-        f"  {'Node':<20} {'lambda':>12} {'active_bins':>12} "
-        f"{'solved_send':>14} {'solved_recv':>14} "
-        f"{'expect_send':>14} {'expect_recv':>14}"
+        f"  {'NIC':<24} {'active_bins':>12} "
+        f"{'solved_send':>14} {'solved_recv':>14} {'L_k (recv)':>14}"
     )
     print(header)
-    print("  " + "-" * 114)
+    print("  " + "-" * 82)
 
-    for node_idx, (name, lambda_val) in enumerate(zip(node_names, lambda_used, strict=True)):
-        x_send = vec_x[node_idx, :num_msg_sizes]
-        x_recv = vec_x[node_idx, num_msg_sizes:]
+    for nic_idx, name in enumerate(nic_names):
+        x_send = vec_x[nic_idx, :num_msg_sizes]
+        x_recv = vec_x[nic_idx, num_msg_sizes:]
 
         active = int(np.sum(x_send > 0.5) + np.sum(x_recv > 0.5))
         solved_send = int(np.round(np.sum(x_send)))
         solved_recv = int(np.round(np.sum(x_recv)))
 
-        expect_send_str = f"{n_send[name]:.1f}" if n_send is not None and name in n_send else "N/A"
         expect_recv_str = f"{n_recv[name]}" if n_recv is not None and name in n_recv else "N/A"
 
-        row = (
-            f"  {name:<20} {lambda_val:>12.3e} {active:>12} "
-            f"{solved_send:>14} {solved_recv:>14} "
-            f"{expect_send_str:>14} {expect_recv_str:>14}"
-        )
+        row = f"  {name:<24} {active:>12} {solved_send:>14} {solved_recv:>14} {expect_recv_str:>14}"
         print(row)
 
         active_send_bins = np.where(x_send > 0.5)[0].tolist()
@@ -364,6 +426,20 @@ def print_solution_summary(
                 print(f"        send: {s:<{pad}} recv: {r}")
         else:
             print("    bins : (none)")
+
+    # Job-wide view: per-bin conservation and number of distinct bins
+    job_send = np.sum(vec_x[:, :num_msg_sizes], axis=0)
+    job_recv = np.sum(vec_x[:, num_msg_sizes:], axis=0)
+    used = np.flatnonzero((job_send > 0.5) | (job_recv > 0.5))
+    max_gap = float(np.max(np.abs(job_send - job_recv))) if num_msg_sizes else 0.0
+
+    print(f"\n  Job-wide distinct bins : {len(used)}")
+    for m in used:
+        print(
+            f"    {int(msg_size_sets[m]):>10}B   "
+            f"send={job_send[m]:>14.2f}   recv={job_recv[m]:>14.2f}"
+        )
+    print(f"  Max per-bin |send - recv| : {max_gap:.3e}")
 
 
 def validate_solution(
@@ -403,7 +479,7 @@ def _validate_node(
 
     width = 70
     print(f"\n{'=' * width}")
-    print(f"  Node : {node_name}")
+    print(f"  NIC : {node_name}")
     print(f"{'=' * width}")
 
     all_counters_pass = True
@@ -434,7 +510,7 @@ def _validate_node(
             if obs > 0:
                 rel_err = abs_err / obs
                 status = "OK" if rel_err <= rel_tol else "WARN"
-            elif pred == 0.0:
+            elif pred < 0.5:
                 rel_err = 0.0
                 status = "OK"
             else:
@@ -487,6 +563,6 @@ def _validate_node(
     node_pass = all_counters_pass and tx_ok and rx_ok
     verdict = "PASS" if node_pass else "WARN"
     direction = "all counters within" if node_pass else "some counters exceed"
-    print(f"  Node status : {verdict} — {direction} {rel_tol * 100:.0f}% relative tolerance")
+    print(f"  NIC status : {verdict} — {direction} {rel_tol * 100:.0f}% relative tolerance")
 
     return node_pass

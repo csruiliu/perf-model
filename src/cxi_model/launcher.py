@@ -57,7 +57,7 @@ def main():
 
     # Y has shape (num_nodes, 2 * NUM_ALL_CNTRS)
     # The first NUM_ALL_CNTRS columns are TX counters and the next NUM_ALL_CNTRS columns are RX counters
-    y_solver, n_names, node_send_msgs, node_recv_msgs = load_counters_single_job(args.counter_dir)
+    y_solver, n_names, nic_recv_msgs = load_counters_single_job(args.counter_dir)
     # ----------------------------------------------------------
     # Step 2 — Build signature matrix A
     # ----------------------------------------------------------
@@ -83,13 +83,9 @@ def main():
     print("=" * 60)
 
     # X's shape is (num_nodes, 2 * num_msg_size_bins)
-    vec_x, lambdas_used = solve_global(
-        matrix_a, y_solver, n_names, msg_size_sets, node_send_msgs, node_recv_msgs
-    )
+    vec_x = solve_global(matrix_a, y_solver, n_names, msg_size_sets, nic_recv_msgs)
 
-    print_solution_summary(
-        n_names, lambdas_used, vec_x, msg_size_sets, node_send_msgs, node_recv_msgs
-    )
+    print_solution_summary(n_names, vec_x, msg_size_sets, nic_recv_msgs)
 
     # Validate that predicted counters match observed counters
     validate_solution(matrix_a, y_solver, vec_x, n_names, rel_tol=0.05)
