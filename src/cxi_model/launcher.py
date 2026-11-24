@@ -11,13 +11,7 @@ from cxi_model.constants import MSG_SIZE_SETS
 from cxi_model.hw_specs import HostSpec
 from cxi_model.job_parser import load_counters_single_job
 from cxi_model.matrix_builder import build_matrix_a, validate_matrix_a
-from cxi_model.pm_config import LATENCY_TABLES
 from cxi_model.solver import print_solution_summary, solve_global, validate_solution
-from cxi_model.time_estimator import (
-    build_latency_model_from_config,
-    build_latency_model_from_file,
-    time_estimation,
-)
 
 
 def main():
@@ -27,7 +21,7 @@ def main():
         "--counter_dir",
         type=Path,
         required=True,
-        help="One SLURM job directories with collected counters (OMB_<job_id>)",
+        help="One job directories with collected counters (e.g., OMB_<job_id>)",
     )
 
     parser.add_argument(
@@ -46,21 +40,6 @@ def main():
         required=True,
         choices=list(HostSpec.keys()),
         help="Reference Host",
-    )
-
-    parser.add_argument(
-        "--latency_file",
-        type=Path,
-        default=None,
-        help="Optional path to latency file (e.g., osu_latency.out). If provided, overrides the built-in table.",
-    )
-
-    parser.add_argument(
-        "--latency_table",
-        type=str,
-        default="omb",
-        choices=list(LATENCY_TABLES.keys()),
-        help="Which latency table from pm_config.py to use.",
     )
 
     args = parser.parse_args()
@@ -114,35 +93,6 @@ def main():
 
     # Validate that predicted counters match observed counters
     validate_solution(matrix_a, y_solver, vec_x, n_names, rel_tol=0.05)
-
-    # ----------------------------------------------------------
-    # Step 4 — Estimate Communication Time Upper Bound
-    # ----------------------------------------------------------
-    # Choose the latency source: explicit file overrides the built-in table.
-    if args.latency_file and args.latency_file.exists():
-        print(f"Using raw latency lookup from file: {args.latency_file}")
-        latency_model = build_latency_model_from_file(args.latency_file)
-    else:
-        if args.latency_file:
-            print(
-                f"[INFO] Latency file '{args.latency_file}' not found — "
-                f"Using pm_config table '{args.latency_table}'."
-            )
-        else:
-            print(f"Using built-in latency table from pm_config: '{args.latency_table}'")
-        latency_model = build_latency_model_from_config(args.latency_table)
-
-    n_msg_sizes = len(msg_size_sets)
-    x_send = vec_x[:, :n_msg_sizes]
-    x_recv = vec_x[:, n_msg_sizes:]
-
-    overlap_time_us, sequential_time_us = time_estimation(
-        x_send, x_recv, msg_size_sets, latency_model, args.ref_host
-    )
-
-    print("\n  === Time Estimation Results ===")
-    print(f"  Full Parallelism: {overlap_time_us / 1e6:.4f} seconds")
-    print(f"  Full Sequentiality: {sequential_time_us / 1e6:.4f} seconds")
 
 
 if __name__ == "__main__":
