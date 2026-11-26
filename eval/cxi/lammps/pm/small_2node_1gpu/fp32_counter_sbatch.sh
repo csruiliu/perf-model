@@ -66,7 +66,8 @@ hni_tx_ok_1024_to_2047 \
 hni_tx_ok_2048_to_4095 \
 hni_tx_ok_4096_to_8191 \
 hni_pkts_sent_by_tc_0 \
-hni_pkts_sent_by_tc_1"
+hni_pkts_sent_by_tc_1 \
+cq_dma_cmd_counts_1"
 
 export RX_COUNTERS_STR="\
 hni_rx_ok_64 \
@@ -80,7 +81,8 @@ hni_rx_ok_4096_to_8191 \
 hni_pkts_recv_by_tc_0 \
 hni_pkts_recv_by_tc_1 \
 lpe_net_match_overflow_0 \
-lpe_net_match_priority_0"
+lpe_net_match_priority_0 \
+lpe_rndzv_puts_0"
 
 # sample interval
 export SAMPLE_INTERVAL=1
@@ -98,7 +100,7 @@ cd    ${RESULTS_DIR}
 
 # Create symlinks to common files and scripts in results directory
 ln -s ${LAMMPS_COMM} .
-ln -s ${LAMMPS_PM}/wrap_dcgmi_container.sh .
+#ln -s ${LAMMPS_PM}/wrap_dcgmi_container.sh .
 ln -s ${LAMMPS_PM}/cxi_snapshot.sh .
 #ln -s ${LAMMPS_PM}/cxi_monitor.sh .
 
@@ -154,6 +156,6 @@ printf "Elapsed Time: %.2f seconds\n" $elapsed >> ${RESULTS_DIR}/runtime.out
 #srun -N 2 --ntasks-per-node=1 podman-hpc stop dcgm-container-${SLURM_JOB_ID} 2>/dev/null || true
 
 unlink common
-unlink wrap_dcgmi_container.sh
+#unlink wrap_dcgmi_container.sh
 unlink cxi_snapshot.sh
 #unlink cxi_monitor.sh

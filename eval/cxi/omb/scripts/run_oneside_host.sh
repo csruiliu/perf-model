@@ -51,7 +51,8 @@ hni_tx_ok_1024_to_2047 \
 hni_tx_ok_2048_to_4095 \
 hni_tx_ok_4096_to_8191 \
 hni_pkts_sent_by_tc_0 \
-hni_pkts_sent_by_tc_1"
+hni_pkts_sent_by_tc_1 \
+cq_dma_cmd_counts_1"
 
 export RX_COUNTERS_STR="\
 hni_rx_ok_64 \
@@ -63,7 +64,10 @@ hni_rx_ok_1024_to_2047 \
 hni_rx_ok_2048_to_4095 \
 hni_rx_ok_4096_to_8191 \
 hni_pkts_recv_by_tc_0 \
-hni_pkts_recv_by_tc_1"
+hni_pkts_recv_by_tc_1 \
+lpe_net_match_overflow_0 \
+lpe_net_match_priority_0 \
+lpe_rndzv_puts_0"
 
 MESSAGE_SIZE=4194304
 
